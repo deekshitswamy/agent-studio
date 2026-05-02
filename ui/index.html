@@ -218,6 +218,49 @@
         gap: 20px;
       }
 
+      .workflow-guide {
+        margin-top: 22px;
+        padding: 20px 22px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: rgba(255, 253, 248, 0.92);
+        box-shadow: var(--shadow);
+      }
+
+      .workflow-steps {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .workflow-step {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fcfaf4;
+      }
+
+      .workflow-step strong {
+        display: block;
+        font-size: 0.82rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 8px;
+      }
+
+      .workflow-step p {
+        margin: 0;
+        font-size: 0.92rem;
+        line-height: 1.45;
+        color: var(--muted);
+      }
+
+      .workflow-hint {
+        margin-top: 16px;
+      }
+
       .small {
         font-size: 0.88rem;
       }
@@ -259,6 +302,62 @@
         font-family: "SFMono-Regular", "Menlo", "Monaco", "Courier New", monospace;
         font-size: 0.88rem;
         color: var(--muted);
+      }
+
+      .task-item {
+        display: grid;
+        gap: 8px;
+      }
+
+      .task-item-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .task-status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: #eee7d9;
+        color: var(--muted);
+      }
+
+      .task-status-badge[data-status="pending"] {
+        background: #efe7d7;
+        color: #705c33;
+      }
+
+      .task-status-badge[data-status="in-progress"] {
+        background: #fff3dd;
+        color: #9a5a00;
+      }
+
+      .task-status-badge[data-status="done"] {
+        background: #e4f4ec;
+        color: #205545;
+      }
+
+      .suggested-task {
+        margin-bottom: 16px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fcfaf4;
+      }
+
+      .suggested-task[hidden] {
+        display: none;
+      }
+
+      .suggested-task-name {
+        margin: 0 0 8px;
+        font-weight: 700;
       }
 
       .draft-list {
@@ -316,7 +415,8 @@
 
       @media (max-width: 860px) {
         .grid,
-        .row {
+        .row,
+        .workflow-steps {
           grid-template-columns: 1fr;
         }
 
@@ -336,18 +436,48 @@
   <body>
     <main class="shell">
       <section class="hero">
-        <p class="eyebrow">Agent Studio v8</p>
-        <h1>Local UI Shell</h1>
+        <p class="eyebrow">Agent Studio v10</p>
+        <h1>Guided Local Workflow</h1>
         <p>
-          A minimal local-first shell for choosing an agent, supplying scoped
-          repo inputs, and viewing run results and logs. API wiring is
-          intentionally left as a placeholder in this step.
+          A local-first operator console for running Task Planner, reviewing
+          drafts, saving task files, starting bounded Dev work, and checking
+          logs one step at a time.
         </p>
         <div class="hero-notes">
           <span class="note">Plain HTML, CSS, and JS only</span>
           <span class="note">Context pack remains primary input</span>
-          <span class="note">No backend behavior changes</span>
+          <span class="note">Everything stays human-triggered</span>
         </div>
+      </section>
+
+      <section class="workflow-guide">
+        <p class="eyebrow">Workflow Guide</p>
+        <h2>Recommended Next Step</h2>
+        <div class="workflow-steps">
+          <div class="workflow-step">
+            <strong>1. Run Task Planner</strong>
+            <p>Choose <code>task-planner</code> and run it with the current context pack.</p>
+          </div>
+          <div class="workflow-step">
+            <strong>2. Review Drafts</strong>
+            <p>Inspect detected Task Planner source and the editable unsaved drafts.</p>
+          </div>
+          <div class="workflow-step">
+            <strong>3. Save Task</strong>
+            <p>Save one reviewed draft to <code>tasks/&lt;task-id&gt;.md</code> when it looks right.</p>
+          </div>
+          <div class="workflow-step">
+            <strong>4. Run Dev</strong>
+            <p>Use a saved task’s <code>Run Dev</code> button to start one bounded implementation run.</p>
+          </div>
+          <div class="workflow-step">
+            <strong>5. View Logs</strong>
+            <p>Reuse the returned <code>logId</code> to inspect plain-text run output and follow-ups.</p>
+          </div>
+        </div>
+        <p class="status workflow-hint small" id="workflow-hint">
+          Start by loading agents and choosing the next human-triggered step.
+        </p>
       </section>
 
       <section class="grid">
@@ -380,6 +510,20 @@
                   required
                 />
                 <p class="hint">Required primary input for every run.</p>
+              </div>
+
+              <div class="field">
+                <label for="project-id">Project ID</label>
+                <input
+                  id="project-id"
+                  name="project-id"
+                  type="text"
+                  placeholder="agent-studio"
+                />
+                <p class="hint">
+                  Optional. When set, Saved Tasks reads from
+                  <code>projects/&lt;project-id&gt;/tasks/</code>.
+                </p>
               </div>
 
               <div class="row">
@@ -471,6 +615,24 @@
               <p>Read-only listing of existing task markdown files under <code>tasks/</code>.</p>
             </div>
             <div class="panel-body">
+              <div class="suggested-task" id="suggested-task-card" hidden>
+                <p class="eyebrow">Suggested Next Task</p>
+                <p class="suggested-task-name" id="suggested-task-name">(no task suggested)</p>
+                <div class="button-row">
+                  <button class="secondary" id="suggested-run-dev-button" type="button">
+                    Run Dev
+                  </button>
+                </div>
+              </div>
+              <div class="suggested-task" id="next-task-card" hidden>
+                <p class="eyebrow">After Successful Dev Run</p>
+                <p class="suggested-task-name" id="next-task-name">(no next task)</p>
+                <div class="button-row">
+                  <button class="secondary" id="next-task-run-dev-button" type="button">
+                    Run Next Task
+                  </button>
+                </div>
+              </div>
               <div class="button-row">
                 <button class="secondary" id="refresh-tasks-button" type="button">
                   Refresh Task List
@@ -538,6 +700,7 @@
       const runButton = document.querySelector("#run-button");
       const runStatus = document.querySelector("#run-status");
       const runResult = document.querySelector("#run-result");
+      const projectIdInput = document.querySelector("#project-id");
       const logIdInput = document.querySelector("#log-id");
       const fetchLogsButton = document.querySelector("#fetch-logs-button");
       const logStatus = document.querySelector("#log-status");
@@ -546,12 +709,31 @@
       const tasksStatus = document.querySelector("#tasks-status");
       const savedTasksList = document.querySelector("#saved-tasks-list");
       const savedTasksEmpty = document.querySelector("#saved-tasks-empty");
+      const suggestedTaskCard = document.querySelector("#suggested-task-card");
+      const suggestedTaskName = document.querySelector("#suggested-task-name");
+      const suggestedRunDevButton = document.querySelector("#suggested-run-dev-button");
+      const nextTaskCard = document.querySelector("#next-task-card");
+      const nextTaskName = document.querySelector("#next-task-name");
+      const nextTaskRunDevButton = document.querySelector("#next-task-run-dev-button");
       const taskPlannerStatus = document.querySelector("#task-planner-status");
       const taskPlannerRunLabel = document.querySelector("#task-planner-run-label");
       const taskPlannerSourceOutput = document.querySelector("#task-planner-source-output");
       const taskDraftsStatus = document.querySelector("#task-drafts-status");
       const taskDraftsList = document.querySelector("#task-drafts-list");
       const taskDraftsEmpty = document.querySelector("#task-drafts-empty");
+      const workflowHint = document.querySelector("#workflow-hint");
+      const CONTEXT_PACK_STORAGE_KEY = "agent-studio:last-context-pack";
+      const PROJECT_ID_STORAGE_KEY = "agent-studio:last-project-id";
+      const TASK_STATUS_STORAGE_KEY = "agent-studio:task-statuses";
+      const workflowState = {
+        savedTasksCount: 0,
+        pendingTasksCount: 0,
+        draftCount: 0,
+        latestLogId: "",
+        savedTasks: [],
+        latestCompletedDevTaskPath: "",
+        taskStatuses: {}
+      };
 
       function setStatus(message, tone = "") {
         runStatus.textContent = message;
@@ -577,24 +759,212 @@
         tasksStatus.dataset.tone = tone;
       }
 
+      function getSelectedProjectId() {
+        return projectIdInput.value.trim();
+      }
+
+      function loadTaskStatusesFromStorage() {
+        try {
+          const rawValue = window.localStorage.getItem(TASK_STATUS_STORAGE_KEY);
+
+          if (!rawValue) {
+            return {};
+          }
+
+          const parsed = JSON.parse(rawValue);
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function persistTaskStatuses() {
+        window.localStorage.setItem(
+          TASK_STATUS_STORAGE_KEY,
+          JSON.stringify(workflowState.taskStatuses)
+        );
+      }
+
+      function getTaskStatus(taskPath) {
+        if (!taskPath) {
+          return "pending";
+        }
+
+        const storedStatus = workflowState.taskStatuses[taskPath];
+        return storedStatus === "in-progress" || storedStatus === "done"
+          ? storedStatus
+          : "pending";
+      }
+
+      function setTaskStatus(taskPath, status) {
+        if (!taskPath) {
+          return;
+        }
+
+        if (status === "pending") {
+          delete workflowState.taskStatuses[taskPath];
+        } else {
+          workflowState.taskStatuses[taskPath] = status;
+        }
+
+        persistTaskStatuses();
+      }
+
+      function getFirstPendingTask(tasks) {
+        return Array.isArray(tasks)
+          ? tasks.find((task) => getTaskStatus(task.path) === "pending") || null
+          : null;
+      }
+
+      function appendProjectToUrl(url, projectId) {
+        if (!projectId) {
+          return url;
+        }
+
+        const separator = url.includes("?") ? "&" : "?";
+        return `${url}${separator}project=${encodeURIComponent(projectId)}`;
+      }
+
+      async function runDevForTask(taskPath) {
+        const contextPack = contextPackInput.value.trim();
+
+        if (!contextPack) {
+          setStatus("Context pack path is required before running Dev.", "error");
+          setResult({
+            error: "Context pack path is required before running Dev from a saved task."
+          });
+          contextPackInput.focus();
+          return;
+        }
+
+        workflowState.latestCompletedDevTaskPath = "";
+        setTaskStatus(taskPath, "in-progress");
+        renderSavedTasks(workflowState.savedTasks);
+
+        const result = await submitRunRequest({
+          contextPack,
+          agent: "dev",
+          task: taskPath
+        });
+
+        if (!result.ok) {
+          setTaskStatus(taskPath, "pending");
+          renderSavedTasks(workflowState.savedTasks);
+        }
+      }
+
+      function updateWorkflowHint() {
+        if (workflowState.latestLogId) {
+          workflowHint.textContent =
+            `Next step: fetch logs for ${workflowState.latestLogId} to review the latest run output.`;
+          workflowHint.dataset.tone = "success";
+          return;
+        }
+
+        if (workflowState.draftCount > 0) {
+          workflowHint.textContent =
+            "Next step: review the unsaved drafts, refine one if needed, and save a task file.";
+          workflowHint.dataset.tone = "success";
+          return;
+        }
+
+        if (workflowState.pendingTasksCount > 0) {
+          workflowHint.textContent =
+            "Next step: choose one pending saved task and click Run Dev when the current context pack is ready.";
+          workflowHint.dataset.tone = "success";
+          return;
+        }
+
+        if (workflowState.savedTasksCount > 0) {
+          workflowHint.textContent =
+            "All visible saved tasks are marked in-progress or done. You can still run any task manually.";
+          workflowHint.dataset.tone = "";
+          return;
+        }
+
+        workflowHint.textContent =
+          "Next step: run task-planner first. No saved tasks or unsaved drafts are available yet.";
+        workflowHint.dataset.tone = "";
+      }
+
+      function renderNextTaskCard() {
+        const tasks = Array.isArray(workflowState.savedTasks) ? workflowState.savedTasks : [];
+        const latestCompletedDevTaskPath = workflowState.latestCompletedDevTaskPath;
+
+        if (!latestCompletedDevTaskPath || tasks.length === 0) {
+          nextTaskCard.hidden = true;
+          nextTaskRunDevButton.onclick = null;
+          return;
+        }
+
+        const currentTaskIndex = tasks.findIndex((task) => task.path === latestCompletedDevTaskPath);
+        const nextTask =
+          currentTaskIndex === -1
+            ? null
+            : tasks
+                .slice(currentTaskIndex + 1)
+                .find((task) => getTaskStatus(task.path) === "pending") || null;
+
+        if (!nextTask) {
+          nextTaskCard.hidden = true;
+          nextTaskRunDevButton.onclick = null;
+          return;
+        }
+
+        nextTaskName.textContent = nextTask.name || nextTask.path || "(unnamed task)";
+        nextTaskRunDevButton.onclick = async () => {
+          await runDevForTask(nextTask.path);
+        };
+        nextTaskCard.hidden = false;
+      }
+
       function renderSavedTasks(tasks) {
         savedTasksList.innerHTML = "";
+        workflowState.savedTasksCount = Array.isArray(tasks) ? tasks.length : 0;
+        workflowState.savedTasks = Array.isArray(tasks) ? tasks : [];
+        workflowState.pendingTasksCount = Array.isArray(tasks)
+          ? tasks.filter((task) => getTaskStatus(task.path) === "pending").length
+          : 0;
 
         if (!Array.isArray(tasks) || tasks.length === 0) {
           savedTasksEmpty.hidden = false;
+          suggestedTaskCard.hidden = true;
+          renderNextTaskCard();
+          updateWorkflowHint();
           return;
         }
 
         savedTasksEmpty.hidden = true;
+        const suggestedTask = getFirstPendingTask(tasks);
+
+        if (suggestedTask) {
+          suggestedTaskName.textContent =
+            suggestedTask.name || suggestedTask.path || "(unnamed task)";
+          suggestedTaskCard.hidden = false;
+          suggestedRunDevButton.onclick = async () => {
+            await runDevForTask(suggestedTask.path);
+          };
+        } else {
+          suggestedTaskCard.hidden = true;
+          suggestedRunDevButton.onclick = null;
+        }
 
         tasks.forEach((task) => {
           const item = document.createElement("li");
+          item.className = "task-item";
+          const header = document.createElement("div");
+          header.className = "task-item-header";
+          const statusBadge = document.createElement("span");
           const name = document.createElement("div");
           const pathLabel = document.createElement("div");
           const actions = document.createElement("div");
           const runDevButton = document.createElement("button");
+          const taskStatus = getTaskStatus(task.path);
 
           name.textContent = task.name || "(unnamed task)";
+          statusBadge.className = "task-status-badge";
+          statusBadge.dataset.status = taskStatus;
+          statusBadge.textContent = taskStatus;
           pathLabel.className = "task-path";
           pathLabel.textContent = task.path || "";
           actions.className = "button-row";
@@ -603,33 +973,30 @@
           runDevButton.textContent = "Run Dev";
 
           runDevButton.addEventListener("click", async () => {
-            const contextPack = contextPackInput.value.trim();
-
-            if (!contextPack) {
-              setStatus("Context pack path is required before running Dev.", "error");
-              setResult({
-                error: "Context pack path is required before running Dev from a saved task."
-              });
-              contextPackInput.focus();
-              return;
-            }
-
-            await submitRunRequest({
-              contextPack,
-              agent: "dev",
-              task: task.path
-            });
+            await runDevForTask(task.path);
           });
 
-          item.appendChild(name);
+          header.appendChild(name);
+          header.appendChild(statusBadge);
+          item.appendChild(header);
           item.appendChild(pathLabel);
           actions.appendChild(runDevButton);
           item.appendChild(actions);
           savedTasksList.appendChild(item);
         });
+
+        renderNextTaskCard();
+        updateWorkflowHint();
       }
 
       async function submitRunRequest(body) {
+        const requestBody = { ...body };
+        const projectId = getSelectedProjectId();
+
+        if (projectId) {
+          requestBody.project = projectId;
+        }
+
         runButton.disabled = true;
         setStatus("Submitting run...");
         setResult({
@@ -642,7 +1009,7 @@
             headers: {
               "Content-Type": "application/json"
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(requestBody)
           });
 
           const rawText = await response.text();
@@ -665,9 +1032,19 @@
           setStatus("Run submitted successfully.", "success");
           setResult(payload);
 
+          if (body.agent === "dev" && typeof body.task === "string" && body.task.trim()) {
+            workflowState.latestCompletedDevTaskPath = body.task.trim();
+            setTaskStatus(workflowState.latestCompletedDevTaskPath, "done");
+          } else {
+            workflowState.latestCompletedDevTaskPath = "";
+          }
+          renderSavedTasks(workflowState.savedTasks);
+
           if (payload && typeof payload === "object" && typeof payload.logId === "string") {
             logIdInput.value = payload.logId;
             setLogStatus("Run completed. The returned log id is ready to fetch.", "success");
+            workflowState.latestLogId = payload.logId;
+            updateWorkflowHint();
           }
 
           if (payload && typeof payload === "object" && typeof payload.id === "string") {
@@ -694,9 +1071,17 @@
           setResult({
             error: error.message
           });
+          return {
+            ok: false,
+            error: error.message
+          };
         } finally {
           runButton.disabled = false;
         }
+
+        return {
+          ok: true
+        };
       }
 
       function setTaskPlannerStatus(message, tone = "") {
@@ -834,9 +1219,11 @@
 
       function renderTaskDrafts(drafts) {
         taskDraftsList.innerHTML = "";
+        workflowState.draftCount = Array.isArray(drafts) ? drafts.length : 0;
 
         if (!Array.isArray(drafts) || drafts.length === 0) {
           taskDraftsEmpty.hidden = false;
+          updateWorkflowHint();
           return;
         }
 
@@ -896,6 +1283,11 @@
               body: bodyTextarea.value.trim(),
               contextPack: contextPackInput.value.trim()
             };
+            const projectId = getSelectedProjectId();
+
+            if (projectId) {
+              payload.project = projectId;
+            }
 
             if (!payload.contextPack) {
               setTaskDraftsStatus("Context pack path is required before saving a draft.", "error");
@@ -926,10 +1318,13 @@
               );
               await loadSavedTasks();
               card.remove();
+              workflowState.draftCount = taskDraftsList.children.length;
 
               if (taskDraftsList.children.length === 0) {
                 taskDraftsEmpty.hidden = false;
               }
+
+              updateWorkflowHint();
             } catch (error) {
               setTaskDraftsStatus(error.message, "error");
             } finally {
@@ -945,6 +1340,8 @@
           card.appendChild(actions);
           taskDraftsList.appendChild(card);
         });
+
+        updateWorkflowHint();
       }
 
       function normalizeLogLookupId(value) {
@@ -1001,7 +1398,16 @@
         setTasksStatus("Loading saved task files...");
 
         try {
-          const response = await fetch(`${API_BASE}/tasks`);
+          const projectId = getSelectedProjectId();
+          const tasksUrl = new URL(`${API_BASE || window.location.origin}/tasks`);
+
+          if (projectId) {
+            tasksUrl.searchParams.set("project", projectId);
+          }
+
+          const response = await fetch(
+            API_BASE ? `${tasksUrl.pathname}${tasksUrl.search}` : tasksUrl.toString()
+          );
           const payload = await response.json();
 
           if (!response.ok) {
@@ -1012,9 +1418,18 @@
           renderSavedTasks(tasks);
 
           if (tasks.length === 0) {
-            setTasksStatus("No saved task files found.");
+            setTasksStatus(
+              projectId
+                ? `No saved task files found for project: ${projectId}.`
+                : "No saved task files found."
+            );
           } else {
-            setTasksStatus("Saved task files loaded.", "success");
+            setTasksStatus(
+              projectId
+                ? `Saved task files loaded for project: ${projectId}.`
+                : "Saved task files loaded.",
+              "success"
+            );
           }
         } catch (error) {
           renderSavedTasks([]);
@@ -1022,6 +1437,8 @@
           savedTasksEmpty.textContent =
             "Saved task files could not be loaded from the local API.";
           setTasksStatus(error.message, "error");
+          workflowState.savedTasksCount = 0;
+          updateWorkflowHint();
         } finally {
           refreshTasksButton.disabled = false;
         }
@@ -1043,7 +1460,10 @@
 
         try {
           const response = await fetch(
-            `${API_BASE}/runs/${encodeURIComponent(runId)}/task-planner-source`
+            appendProjectToUrl(
+              `${API_BASE}/runs/${encodeURIComponent(runId)}/task-planner-source`,
+              getSelectedProjectId()
+            )
           );
           const payload = await response.json();
 
@@ -1081,6 +1501,42 @@
         }
       }
 
+      function rememberContextPack() {
+        const value = contextPackInput.value.trim();
+
+        if (value) {
+          window.localStorage.setItem(CONTEXT_PACK_STORAGE_KEY, value);
+        } else {
+          window.localStorage.removeItem(CONTEXT_PACK_STORAGE_KEY);
+        }
+      }
+
+      function restoreContextPack() {
+        const savedValue = window.localStorage.getItem(CONTEXT_PACK_STORAGE_KEY);
+
+        if (savedValue) {
+          contextPackInput.value = savedValue;
+        }
+      }
+
+      function rememberProjectId() {
+        const value = projectIdInput.value.trim();
+
+        if (value) {
+          window.localStorage.setItem(PROJECT_ID_STORAGE_KEY, value);
+        } else {
+          window.localStorage.removeItem(PROJECT_ID_STORAGE_KEY);
+        }
+      }
+
+      function restoreProjectId() {
+        const savedValue = window.localStorage.getItem(PROJECT_ID_STORAGE_KEY);
+
+        if (savedValue) {
+          projectIdInput.value = savedValue;
+        }
+      }
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
 
@@ -1114,6 +1570,18 @@
         await submitRunRequest(body);
       });
 
+      contextPackInput.addEventListener("input", () => {
+        rememberContextPack();
+      });
+
+      projectIdInput.addEventListener("input", () => {
+        rememberProjectId();
+      });
+
+      projectIdInput.addEventListener("change", () => {
+        loadSavedTasks();
+      });
+
       fetchLogsButton.addEventListener("click", async () => {
         const requestedId = normalizeLogLookupId(logIdInput.value);
 
@@ -1130,7 +1598,10 @@
 
         try {
           const response = await fetch(
-            `${API_BASE}/logs/${encodeURIComponent(requestedId)}`
+            appendProjectToUrl(
+              `${API_BASE}/logs/${encodeURIComponent(requestedId)}`,
+              getSelectedProjectId()
+            )
           );
           const rawText = await response.text();
 
@@ -1149,6 +1620,8 @@
 
           setLogStatus("Log fetched successfully.", "success");
           setLogOutput(rawText);
+          workflowState.latestLogId = "";
+          updateWorkflowHint();
         } catch (error) {
           setLogStatus("Log fetch failed.", "error");
           setLogOutput(error.message);
@@ -1161,6 +1634,10 @@
         loadSavedTasks();
       });
 
+      restoreContextPack();
+      restoreProjectId();
+      workflowState.taskStatuses = loadTaskStatusesFromStorage();
+      updateWorkflowHint();
       loadAgents();
       loadSavedTasks();
     </script>

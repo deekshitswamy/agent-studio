@@ -39,6 +39,30 @@ Assistant/Orchestrator Identity: DIVYA
   - Dev task guardrails
   - direct-agent context validation
   - direct-agent QA checklist
+- `v7`:
+  - local API server
+  - `GET /agents`
+  - `POST /runs`
+  - `GET /runs/:id`
+  - `GET /logs/:id`
+- `v8`:
+  - local browser UI
+  - run form, log viewer, and served static UI
+- `v9`:
+  - saved task listing
+  - Task Planner source detection
+  - editable unsaved drafts
+  - human-reviewed task saving
+- `v10`:
+  - Run Dev directly from saved tasks in the UI
+- `v12`:
+  - guided workflow hints in the UI
+  - local context-pack and next-step guidance
+- `v13`:
+  - lightweight project workspace layer
+  - project-scoped tasks
+  - project-scoped runs and logs
+  - legacy fallback when no project is selected
 
 ## Current Direct-Agent Contract
 
@@ -73,7 +97,9 @@ Assistant/Orchestrator Identity: DIVYA
 - `bin/run-agent.js` is the main Agent Studio CLI runner.
 - `prompts/` holds role prompts.
 - `tasks/` holds human-selected work items.
+- `projects/<project-id>/tasks/` holds optional project-scoped task files.
 - `tasks.json` is the optional queue state file.
+- `projects/<project-id>/.local/runs/` holds optional project-scoped run artifacts.
 - `src/tool-router.js` gates local tool usage by role.
 - `src/context-builder.js` keeps agent context narrow and deterministic.
 - `bin/mcp-server.js` and `src/mcp/` hold the local read-only MCP prototype.
@@ -87,8 +113,8 @@ Assistant/Orchestrator Identity: DIVYA
 - no Dev execution inside bounded chains
 - no autonomous execution loop
 - no background or async workflow engine
-- no UI
 - no database-backed state
+- no project creation flow
 - no write-enabled MCP tools
 - no shell execution through MCP
 - no external network integrations for the MCP layer
@@ -114,6 +140,9 @@ If MCP work continues, the safest next milestone is a small, explicit operator/w
    - [releases/agent-runner-v1.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-runner-v1.md)
    - [releases/agent-runner-v2-task-queue.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-runner-v2-task-queue.md)
    - [releases/agent-runner-v5-local-mcp-server.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-runner-v5-local-mcp-server.md)
+   - [releases/agent-studio-v8-ui.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v8-ui.md)
+   - [releases/agent-studio-v9-task-drafts.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v9-task-drafts.md)
+   - [releases/agent-studio-v13-project-workspaces.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v13-project-workspaces.md)
 6. Choose one context pack or one selected task before running anything.
 7. Keep scope bounded to that single execution.
 

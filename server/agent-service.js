@@ -12,6 +12,7 @@ const SUPPORTED_AGENTS = Object.freeze(["pm", "architect", "task-planner", "dev"
 const RUN_ARTIFACT_DIR = path.resolve(__dirname, "..", ".local", "runs");
 const UI_INDEX_PATH = path.resolve(__dirname, "..", "ui", "index.html");
 const TASKS_DIR_PATH = path.resolve(__dirname, "..", "tasks");
+const PROJECTS_DIR_PATH = path.resolve(__dirname, "..", "projects");
 
 function getServerConfig(env = process.env) {
   const rawPort = env.PORT;
@@ -92,6 +93,14 @@ function validateRunRequest(body) {
   if (agent === "dev" && (typeof body.task !== "string" || !body.task.trim())) {
     throw new Error("Dev runs require explicit `task`.");
   }
+
+  if (
+    body.project !== undefined &&
+    body.project !== null &&
+    (typeof body.project !== "string" || !body.project.trim())
+  ) {
+    throw new Error("POST /runs `project` must be a non-empty string when provided.");
+  }
 }
 
 function createRunId() {
@@ -99,8 +108,17 @@ function createRunId() {
   return `${timestamp}-${process.pid}`;
 }
 
-function ensureRunArtifactDir() {
-  fs.mkdirSync(RUN_ARTIFACT_DIR, { recursive: true });
+function getRunArtifactDirectoryForProject(projectId) {
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    return RUN_ARTIFACT_DIR;
+  }
+
+  const normalizedProjectId = normalizeProjectId(projectId);
+  return path.join(PROJECTS_DIR_PATH, normalizedProjectId, ".local", "runs");
+}
+
+function ensureRunArtifactDir(projectId = "") {
+  fs.mkdirSync(getRunArtifactDirectoryForProject(projectId), { recursive: true });
 }
 
 function buildRunCommand(body) {
@@ -125,8 +143,9 @@ function runAgentStudioCommand({ body, repoRoot }) {
   const startedAt = new Date().toISOString();
   const id = createRunId();
   const logId = `${id}.log`;
-  const metadataPath = path.join(RUN_ARTIFACT_DIR, `${id}.json`);
-  const logPath = path.join(RUN_ARTIFACT_DIR, logId);
+  const runArtifactDir = getRunArtifactDirectoryForProject(body.project || "");
+  const metadataPath = path.join(runArtifactDir, `${id}.json`);
+  const logPath = path.join(runArtifactDir, logId);
   const args = buildRunCommand(body);
   const result = spawnSync(process.execPath, args, {
     cwd: repoRoot,
@@ -164,6 +183,10 @@ function runAgentStudioCommand({ body, repoRoot }) {
     completedAt
   };
 
+  if (typeof body.project === "string" && body.project.trim()) {
+    metadata.project = normalizeProjectId(body.project);
+  }
+
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
 
   return metadata;
@@ -187,16 +210,22 @@ function validateRunArtifactId(runId) {
   return normalizedId;
 }
 
-function getRunMetadataPath(runId) {
-  return path.join(RUN_ARTIFACT_DIR, `${validateRunArtifactId(runId)}.json`);
+function getRunMetadataPath(runId, projectId = "") {
+  return path.join(
+    getRunArtifactDirectoryForProject(projectId),
+    `${validateRunArtifactId(runId)}.json`
+  );
 }
 
-function getRunLogPath(runId) {
-  return path.join(RUN_ARTIFACT_DIR, `${validateRunArtifactId(runId)}.log`);
+function getRunLogPath(runId, projectId = "") {
+  return path.join(
+    getRunArtifactDirectoryForProject(projectId),
+    `${validateRunArtifactId(runId)}.log`
+  );
 }
 
-function readRunMetadata(runId) {
-  const metadataPath = getRunMetadataPath(runId);
+function readRunMetadata(runId, projectId = "") {
+  const metadataPath = getRunMetadataPath(runId, projectId);
 
   if (!fs.existsSync(metadataPath)) {
     const error = new Error(`Run not found: ${runId}`);
@@ -213,8 +242,8 @@ function readRunMetadata(runId) {
   }
 }
 
-function readRunLog(runId) {
-  const logPath = getRunLogPath(runId);
+function readRunLog(runId, projectId = "") {
+  const logPath = getRunLogPath(runId, projectId);
 
   if (!fs.existsSync(logPath)) {
     const error = new Error(`Log not found: ${runId}`);
@@ -244,8 +273,8 @@ function extractStdoutFromRunLog(logContent) {
   return stdoutContent.trim();
 }
 
-function readTaskPlannerSource(runId) {
-  const metadata = readRunMetadata(runId);
+function readTaskPlannerSource(runId, projectId = "") {
+  const metadata = readRunMetadata(runId, projectId);
 
   if (metadata.agent !== "task-planner" || metadata.status !== "completed") {
     return {
@@ -257,7 +286,7 @@ function readTaskPlannerSource(runId) {
     };
   }
 
-  const logContent = readRunLog(runId);
+  const logContent = readRunLog(runId, projectId);
   const sourceText = extractStdoutFromRunLog(logContent);
 
   return {
@@ -279,17 +308,47 @@ function readUiIndexHtml() {
   return fs.readFileSync(UI_INDEX_PATH, "utf8");
 }
 
-function listSavedTaskFiles() {
-  if (!fs.existsSync(TASKS_DIR_PATH)) {
+function normalizeProjectId(projectId) {
+  const normalized = projectId.trim();
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9-_]*$/.test(normalized)) {
+    const error = new Error("Project id must use only letters, numbers, hyphens, or underscores.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return normalized;
+}
+
+function getTasksDirectoryForProject(projectId) {
+  if (typeof projectId !== "string" || !projectId.trim()) {
+    return {
+      rootPath: TASKS_DIR_PATH,
+      pathPrefix: "tasks/"
+    };
+  }
+
+  const normalizedProjectId = normalizeProjectId(projectId);
+
+  return {
+    rootPath: path.join(PROJECTS_DIR_PATH, normalizedProjectId, "tasks"),
+    pathPrefix: `projects/${normalizedProjectId}/tasks/`
+  };
+}
+
+function listSavedTaskFiles(projectId = "") {
+  const { rootPath, pathPrefix } = getTasksDirectoryForProject(projectId);
+
+  if (!fs.existsSync(rootPath)) {
     return [];
   }
 
   return fs
-    .readdirSync(TASKS_DIR_PATH, { withFileTypes: true })
+    .readdirSync(rootPath, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => ({
       name: entry.name,
-      path: `tasks/${entry.name}`
+      path: `${pathPrefix}${entry.name}`
     }))
     .sort((left, right) => left.path.localeCompare(right.path));
 }
@@ -314,6 +373,14 @@ function validateTaskSaveRequest(body) {
   if (typeof body.contextPack !== "string" || !body.contextPack.trim()) {
     throw new Error("POST /tasks requires `contextPack`.");
   }
+
+  if (
+    body.project !== undefined &&
+    body.project !== null &&
+    (typeof body.project !== "string" || !body.project.trim())
+  ) {
+    throw new Error("POST /tasks `project` must be a non-empty string when provided.");
+  }
 }
 
 function normalizeTaskId(taskId) {
@@ -326,9 +393,15 @@ function normalizeTaskId(taskId) {
   return normalized;
 }
 
-function getSavedTaskPath(taskId) {
+function getSavedTaskPath(taskId, projectId = "") {
   const normalizedTaskId = normalizeTaskId(taskId);
-  return path.join(TASKS_DIR_PATH, `${normalizedTaskId}.md`);
+  const { rootPath, pathPrefix } = getTasksDirectoryForProject(projectId);
+
+  return {
+    absolutePath: path.join(rootPath, `${normalizedTaskId}.md`),
+    relativePath: `${pathPrefix}${normalizedTaskId}.md`,
+    rootPath
+  };
 }
 
 function parseDraftSections(markdown) {
@@ -483,23 +556,23 @@ function buildSavedTaskMarkdown({ taskId, title, body, contextPack }) {
 function saveReviewedTaskDraft(body) {
   validateTaskSaveRequest(body);
 
-  const taskPath = getSavedTaskPath(body.taskId);
+  const taskLocation = getSavedTaskPath(body.taskId, body.project || "");
 
-  if (fs.existsSync(taskPath)) {
-    const error = new Error(`Task file already exists: tasks/${path.basename(taskPath)}`);
+  if (fs.existsSync(taskLocation.absolutePath)) {
+    const error = new Error(`Task file already exists: ${taskLocation.relativePath}`);
     error.statusCode = 409;
     throw error;
   }
 
-  fs.mkdirSync(TASKS_DIR_PATH, { recursive: true });
+  fs.mkdirSync(taskLocation.rootPath, { recursive: true });
 
   const markdown = buildSavedTaskMarkdown(body);
-  fs.writeFileSync(taskPath, `${markdown}\n`, "utf8");
+  fs.writeFileSync(taskLocation.absolutePath, `${markdown}\n`, "utf8");
 
-  const validation = validateTaskFile(taskPath);
+  const validation = validateTaskFile(taskLocation.absolutePath);
 
   if (!validation.valid) {
-    fs.unlinkSync(taskPath);
+    fs.unlinkSync(taskLocation.absolutePath);
     const error = new Error(`Saved task file failed validation: ${validation.errors.join("; ")}`);
     error.statusCode = 500;
     throw error;
@@ -508,8 +581,8 @@ function saveReviewedTaskDraft(body) {
   return {
     saved: true,
     task: {
-      name: path.basename(taskPath),
-      path: `tasks/${path.basename(taskPath)}`
+      name: path.basename(taskLocation.absolutePath),
+      path: taskLocation.relativePath
     },
     validation: {
       valid: true
@@ -566,9 +639,17 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
     }
 
     if (method === "GET" && url.pathname === "/tasks") {
-      sendJson(response, 200, {
-        tasks: listSavedTaskFiles()
-      });
+      try {
+        const projectId = url.searchParams.get("project") || "";
+        sendJson(response, 200, {
+          tasks: listSavedTaskFiles(projectId),
+          project: projectId.trim() || null
+        });
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
+          error: error.message
+        });
+      }
       return;
     }
 
@@ -576,6 +657,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       const runId = decodeURIComponent(
         url.pathname.slice("/runs/".length, -"/task-planner-source".length)
       ).trim();
+      const projectId = url.searchParams.get("project") || "";
 
       if (!runId) {
         sendJson(response, 404, {
@@ -585,7 +667,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       }
 
       try {
-        const sourcePayload = readTaskPlannerSource(runId);
+        const sourcePayload = readTaskPlannerSource(runId, projectId);
         sendJson(response, 200, sourcePayload);
       } catch (error) {
         sendJson(response, error.statusCode || 500, {
@@ -597,6 +679,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
 
     if (method === "GET" && url.pathname.startsWith("/runs/")) {
       const runId = decodeURIComponent(url.pathname.slice("/runs/".length)).trim();
+      const projectId = url.searchParams.get("project") || "";
 
       if (!runId) {
         sendJson(response, 404, {
@@ -606,7 +689,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       }
 
       try {
-        const metadata = readRunMetadata(runId);
+        const metadata = readRunMetadata(runId, projectId);
         sendJson(response, 200, metadata);
       } catch (error) {
         sendJson(response, error.statusCode || 500, {
@@ -618,6 +701,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
 
     if (method === "GET" && url.pathname.startsWith("/logs/")) {
       const runId = decodeURIComponent(url.pathname.slice("/logs/".length)).trim();
+      const projectId = url.searchParams.get("project") || "";
 
       if (!runId) {
         sendJson(response, 404, {
@@ -627,7 +711,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       }
 
       try {
-        const logContent = readRunLog(runId);
+        const logContent = readRunLog(runId, projectId);
         response.writeHead(200, {
           "Content-Type": "text/plain; charset=utf-8"
         });
@@ -657,7 +741,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       try {
         const body = await readJsonBody(request);
         validateRunRequest(body);
-        ensureRunArtifactDir();
+        ensureRunArtifactDir(body.project || "");
 
         const metadata = runAgentStudioCommand({
           body,
