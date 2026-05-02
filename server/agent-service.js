@@ -10,6 +10,7 @@ const DEFAULT_HOST = "127.0.0.1";
 const SUPPORTED_AGENTS = Object.freeze(["pm", "architect", "task-planner", "dev", "qa"]);
 const RUN_ARTIFACT_DIR = path.resolve(__dirname, "..", ".local", "runs");
 const UI_INDEX_PATH = path.resolve(__dirname, "..", "ui", "index.html");
+const TASKS_DIR_PATH = path.resolve(__dirname, "..", "tasks");
 
 function getServerConfig(env = process.env) {
   const rawPort = env.PORT;
@@ -223,6 +224,50 @@ function readRunLog(runId) {
   return fs.readFileSync(logPath, "utf8");
 }
 
+function extractStdoutFromRunLog(logContent) {
+  const stdoutMarker = "\nstdout:\n";
+  const stderrMarker = "\n\nstderr:\n";
+  const stdoutStart = logContent.indexOf(stdoutMarker);
+
+  if (stdoutStart === -1) {
+    return "";
+  }
+
+  const contentStart = stdoutStart + stdoutMarker.length;
+  const stderrStart = logContent.indexOf(stderrMarker, contentStart);
+  const stdoutContent =
+    stderrStart === -1
+      ? logContent.slice(contentStart)
+      : logContent.slice(contentStart, stderrStart);
+
+  return stdoutContent.trim();
+}
+
+function readTaskPlannerSource(runId) {
+  const metadata = readRunMetadata(runId);
+
+  if (metadata.agent !== "task-planner" || metadata.status !== "completed") {
+    return {
+      detected: false,
+      runId,
+      agent: metadata.agent,
+      status: metadata.status,
+      sourceText: null
+    };
+  }
+
+  const logContent = readRunLog(runId);
+  const sourceText = extractStdoutFromRunLog(logContent);
+
+  return {
+    detected: sourceText.length > 0,
+    runId,
+    agent: metadata.agent,
+    status: metadata.status,
+    sourceText: sourceText || null
+  };
+}
+
 function readUiIndexHtml() {
   if (!fs.existsSync(UI_INDEX_PATH)) {
     const error = new Error("UI entry point not found.");
@@ -231,6 +276,131 @@ function readUiIndexHtml() {
   }
 
   return fs.readFileSync(UI_INDEX_PATH, "utf8");
+}
+
+function listSavedTaskFiles() {
+  if (!fs.existsSync(TASKS_DIR_PATH)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(TASKS_DIR_PATH, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => ({
+      name: entry.name,
+      path: `tasks/${entry.name}`
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function validateTaskSaveRequest(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Request body must be a JSON object.");
+  }
+
+  if (typeof body.taskId !== "string" || !body.taskId.trim()) {
+    throw new Error("POST /tasks requires `taskId`.");
+  }
+
+  if (typeof body.title !== "string" || !body.title.trim()) {
+    throw new Error("POST /tasks requires `title`.");
+  }
+
+  if (typeof body.body !== "string" || !body.body.trim()) {
+    throw new Error("POST /tasks requires `body`.");
+  }
+
+  if (typeof body.contextPack !== "string" || !body.contextPack.trim()) {
+    throw new Error("POST /tasks requires `contextPack`.");
+  }
+}
+
+function normalizeTaskId(taskId) {
+  const normalized = taskId.trim().replace(/\.md$/i, "");
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9-_]*$/.test(normalized)) {
+    throw new Error("Task id must use only letters, numbers, hyphens, or underscores.");
+  }
+
+  return normalized;
+}
+
+function getSavedTaskPath(taskId) {
+  const normalizedTaskId = normalizeTaskId(taskId);
+  return path.join(TASKS_DIR_PATH, `${normalizedTaskId}.md`);
+}
+
+function buildSavedTaskMarkdown({ taskId, title, body, contextPack }) {
+  return [
+    `# Task: ${title.trim()}`,
+    "",
+    "## Task",
+    "",
+    `- \`${normalizeTaskId(taskId)}\``,
+    "",
+    "## Status",
+    "",
+    "- `pending`",
+    "",
+    "## Objective",
+    "",
+    `- ${title.trim()}`,
+    "",
+    "## Context Pack",
+    "",
+    `- \`${contextPack.trim()}\``,
+    "",
+    "## Scope",
+    "",
+    "- Review and refine the saved draft content below.",
+    "- Keep changes bounded to the selected task.",
+    "",
+    "## Out of Scope",
+    "",
+    "- Automatic execution",
+    "- Queue insertion",
+    "- Background jobs",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "- Reviewed draft content is preserved in this file.",
+    "- The saved task file remains human-controlled.",
+    "",
+    "## Verification",
+    "",
+    `- \`node ./bin/run-agent.js task validate tasks/${normalizeTaskId(taskId)}.md\``,
+    "",
+    "## Dev Handoff",
+    "",
+    "- Reviewed draft source:",
+    "",
+    body.trim()
+  ].join("\n");
+}
+
+function saveReviewedTaskDraft(body) {
+  validateTaskSaveRequest(body);
+
+  const taskPath = getSavedTaskPath(body.taskId);
+
+  if (fs.existsSync(taskPath)) {
+    const error = new Error(`Task file already exists: tasks/${path.basename(taskPath)}`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  fs.mkdirSync(TASKS_DIR_PATH, { recursive: true });
+
+  const markdown = buildSavedTaskMarkdown(body);
+  fs.writeFileSync(taskPath, `${markdown}\n`, "utf8");
+
+  return {
+    saved: true,
+    task: {
+      name: path.basename(taskPath),
+      path: `tasks/${path.basename(taskPath)}`
+    }
+  };
 }
 
 function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } = {}) {
@@ -250,7 +420,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
         name: "Agent Studio API",
         status: "ok",
         version: "v7-skeleton",
-        routes: ["/", "/ui", "/health", "/agents", "/runs/:id", "/logs/:id"]
+        routes: ["/", "/ui", "/health", "/agents", "/tasks", "/runs/:id", "/logs/:id"]
       });
       return;
     }
@@ -278,6 +448,36 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       sendJson(response, 200, {
         agents: SUPPORTED_AGENTS
       });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/tasks") {
+      sendJson(response, 200, {
+        tasks: listSavedTaskFiles()
+      });
+      return;
+    }
+
+    if (method === "GET" && url.pathname.startsWith("/runs/") && url.pathname.endsWith("/task-planner-source")) {
+      const runId = decodeURIComponent(
+        url.pathname.slice("/runs/".length, -"/task-planner-source".length)
+      ).trim();
+
+      if (!runId) {
+        sendJson(response, 404, {
+          error: "Not found."
+        });
+        return;
+      }
+
+      try {
+        const sourcePayload = readTaskPlannerSource(runId);
+        sendJson(response, 200, sourcePayload);
+      } catch (error) {
+        sendJson(response, error.statusCode || 500, {
+          error: error.message
+        });
+      }
       return;
     }
 
@@ -320,6 +520,19 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
         response.end(logContent);
       } catch (error) {
         sendJson(response, error.statusCode || 500, {
+          error: error.message
+        });
+      }
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/tasks") {
+      try {
+        const body = await readJsonBody(request);
+        const result = saveReviewedTaskDraft(body);
+        sendJson(response, 201, result);
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
           error: error.message
         });
       }
@@ -380,8 +593,10 @@ module.exports = {
   getServerConfig,
   getRunLogPath,
   getRunMetadataPath,
+  getSavedTaskPath,
   readRunLog,
   readRunMetadata,
   runAgentStudioCommand,
+  saveReviewedTaskDraft,
   startAgentService
 };

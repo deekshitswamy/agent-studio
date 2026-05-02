@@ -1,0 +1,10 @@
+{
+  "id": "2026-05-02T12-02-15-413Z-14074",
+  "agent": "task-planner",
+  "contextPack": "context-packs/agent-studio-v9-task-drafts.md",
+  "status": "completed",
+  "exitCode": 0,
+  "logId": "2026-05-02T12-02-15-413Z-14074.log",
+  "startedAt": "2026-05-02T12:02:15.413Z",
+  "completedAt": "2026-05-02T12:02:15.487Z"
+}

@@ -245,6 +245,75 @@
         color: #205545;
       }
 
+      .task-list {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--ink);
+      }
+
+      .task-list li + li {
+        margin-top: 8px;
+      }
+
+      .task-path {
+        font-family: "SFMono-Regular", "Menlo", "Monaco", "Courier New", monospace;
+        font-size: 0.88rem;
+        color: var(--muted);
+      }
+
+      .draft-list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .draft-card {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fcfaf4;
+      }
+
+      .draft-card label {
+        font-size: 0.82rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .draft-card textarea {
+        min-height: 180px;
+        resize: vertical;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .draft-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .draft-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(14, 107, 92, 0.08);
+        color: var(--accent-strong);
+        font-size: 0.8rem;
+        margin-bottom: 10px;
+      }
+
+      .source-label {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
       @media (max-width: 860px) {
         .grid,
         .row {
@@ -394,6 +463,66 @@
               </p>
             </div>
           </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Saved Tasks</p>
+              <h2>Task Files</h2>
+              <p>Read-only listing of existing task markdown files under <code>tasks/</code>.</p>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="secondary" id="refresh-tasks-button" type="button">
+                  Refresh Task List
+                </button>
+              </div>
+              <p class="status small" id="tasks-status">
+                Loading saved task files from the local API.
+              </p>
+              <ul class="task-list" id="saved-tasks-list"></ul>
+              <p class="placeholder small" id="saved-tasks-empty">
+                Saved task files will appear here. This panel does not auto-select or
+                auto-run any task.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Task Planner Source</p>
+              <h2>Detected Source Text</h2>
+              <p>Shows conservative source text only for completed <code>task-planner</code> runs.</p>
+            </div>
+            <div class="panel-body">
+              <p class="status small" id="task-planner-status">
+                Submit a completed task-planner run to inspect its source text.
+              </p>
+              <p class="source-label" id="task-planner-run-label">
+                No task-planner run detected yet.
+              </p>
+              <pre id="task-planner-source-output">Task Planner source text will appear here when detected.</pre>
+              <p class="placeholder small">
+                This step does not extract drafts, save task files, or trigger any execution.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Unsaved Drafts</p>
+              <h2>Editable Task Drafts</h2>
+              <p>Best-effort extraction only. Drafts stay unsaved and require human review.</p>
+            </div>
+            <div class="panel-body">
+              <p class="status small" id="task-drafts-status">
+                No Task Planner draft source has been parsed yet.
+              </p>
+              <div class="draft-list" id="task-drafts-list"></div>
+              <p class="placeholder small" id="task-drafts-empty">
+                Unsaved editable drafts will appear here after a completed Task Planner run is detected.
+              </p>
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -413,6 +542,16 @@
       const fetchLogsButton = document.querySelector("#fetch-logs-button");
       const logStatus = document.querySelector("#log-status");
       const logOutput = document.querySelector("#log-output");
+      const refreshTasksButton = document.querySelector("#refresh-tasks-button");
+      const tasksStatus = document.querySelector("#tasks-status");
+      const savedTasksList = document.querySelector("#saved-tasks-list");
+      const savedTasksEmpty = document.querySelector("#saved-tasks-empty");
+      const taskPlannerStatus = document.querySelector("#task-planner-status");
+      const taskPlannerRunLabel = document.querySelector("#task-planner-run-label");
+      const taskPlannerSourceOutput = document.querySelector("#task-planner-source-output");
+      const taskDraftsStatus = document.querySelector("#task-drafts-status");
+      const taskDraftsList = document.querySelector("#task-drafts-list");
+      const taskDraftsEmpty = document.querySelector("#task-drafts-empty");
 
       function setStatus(message, tone = "") {
         runStatus.textContent = message;
@@ -431,6 +570,284 @@
 
       function setLogOutput(payload) {
         logOutput.textContent = payload;
+      }
+
+      function setTasksStatus(message, tone = "") {
+        tasksStatus.textContent = message;
+        tasksStatus.dataset.tone = tone;
+      }
+
+      function renderSavedTasks(tasks) {
+        savedTasksList.innerHTML = "";
+
+        if (!Array.isArray(tasks) || tasks.length === 0) {
+          savedTasksEmpty.hidden = false;
+          return;
+        }
+
+        savedTasksEmpty.hidden = true;
+
+        tasks.forEach((task) => {
+          const item = document.createElement("li");
+          const name = document.createElement("div");
+          const pathLabel = document.createElement("div");
+
+          name.textContent = task.name || "(unnamed task)";
+          pathLabel.className = "task-path";
+          pathLabel.textContent = task.path || "";
+
+          item.appendChild(name);
+          item.appendChild(pathLabel);
+          savedTasksList.appendChild(item);
+        });
+      }
+
+      function setTaskPlannerStatus(message, tone = "") {
+        taskPlannerStatus.textContent = message;
+        taskPlannerStatus.dataset.tone = tone;
+      }
+
+      function setTaskPlannerSourceLabel(message) {
+        taskPlannerRunLabel.textContent = message;
+      }
+
+      function setTaskPlannerSourceOutput(payload) {
+        taskPlannerSourceOutput.textContent = payload;
+      }
+
+      function setTaskDraftsStatus(message, tone = "") {
+        taskDraftsStatus.textContent = message;
+        taskDraftsStatus.dataset.tone = tone;
+      }
+
+      function slugifyTaskId(value) {
+        return value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 48);
+      }
+
+      function extractEmbeddedTaskPlannerMarkdown(sourceText) {
+        const trimmed = sourceText.trim();
+
+        if (trimmed.startsWith("# task-planner Execution Output")) {
+          return trimmed;
+        }
+
+        const jsonStart = trimmed.indexOf("{");
+
+        if (jsonStart === -1) {
+          return trimmed;
+        }
+
+        try {
+          const parsed = JSON.parse(trimmed.slice(jsonStart));
+
+          return (
+            parsed?.executed_agent?.output_markdown ||
+            parsed?.executed_agent?.result?.output_markdown ||
+            trimmed
+          );
+        } catch (error) {
+          return trimmed;
+        }
+      }
+
+      function buildFallbackDraft(markdown) {
+        const clarifiedObjectiveMatch = markdown.match(/Clarified Objective:\s*(.+)/i);
+        const title = clarifiedObjectiveMatch?.[1]?.trim() || "Unsaved Task Draft";
+
+        return [
+          {
+            title,
+            suggestedTaskId: `draft-${slugifyTaskId(title) || "task"}`,
+            body: markdown.trim(),
+            status: "draft"
+          }
+        ];
+      }
+
+      function extractTaskDraftsFromSource(sourceText) {
+        const markdown = extractEmbeddedTaskPlannerMarkdown(sourceText);
+        const lines = markdown.split(/\r?\n/);
+        const drafts = [];
+        const genericHeadings = new Set([
+          "summary",
+          "output",
+          "next action",
+          "warnings",
+          "metadata"
+        ]);
+
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index].trim();
+          const blockStart =
+            /^[-*]\s*task\b[:\s-]/i.test(line) ||
+            /^\d+\.\s*task\b[:\s-]/i.test(line) ||
+            /^#{1,6}\s+/.test(line);
+
+          if (!blockStart) {
+            continue;
+          }
+
+          const headingText = line
+            .replace(/^[-*]\s*/, "")
+            .replace(/^\d+\.\s*/, "")
+            .replace(/^#{1,6}\s*/, "")
+            .trim();
+
+          if (!headingText || genericHeadings.has(headingText.toLowerCase())) {
+            continue;
+          }
+
+          const blockLines = [lines[index]];
+          let cursor = index + 1;
+
+          while (cursor < lines.length) {
+            const candidate = lines[cursor].trim();
+            const nextBlockStart =
+              /^[-*]\s*task\b[:\s-]/i.test(candidate) ||
+              /^\d+\.\s*task\b[:\s-]/i.test(candidate) ||
+              /^#{1,6}\s+/.test(candidate);
+
+            if (nextBlockStart) {
+              break;
+            }
+
+            blockLines.push(lines[cursor]);
+            cursor += 1;
+          }
+
+          const title = headingText.replace(/^task\b[:\s-]*/i, "").trim() || "Untitled Draft";
+          const body = blockLines.join("\n").trim();
+
+          drafts.push({
+            title,
+            suggestedTaskId: `draft-${slugifyTaskId(title) || `task-${drafts.length + 1}`}`,
+            body,
+            status: "draft"
+          });
+
+          index = cursor - 1;
+        }
+
+        return drafts.length > 0 ? drafts : buildFallbackDraft(markdown);
+      }
+
+      function renderTaskDrafts(drafts) {
+        taskDraftsList.innerHTML = "";
+
+        if (!Array.isArray(drafts) || drafts.length === 0) {
+          taskDraftsEmpty.hidden = false;
+          return;
+        }
+
+        taskDraftsEmpty.hidden = true;
+
+        drafts.forEach((draft) => {
+          const card = document.createElement("article");
+          card.className = "draft-card";
+
+          const badge = document.createElement("div");
+          badge.className = "draft-badge";
+          badge.textContent = "Unsaved draft";
+
+          const meta = document.createElement("div");
+          meta.className = "draft-meta";
+
+          const titleField = document.createElement("div");
+          const titleLabel = document.createElement("label");
+          const titleInput = document.createElement("input");
+          titleLabel.textContent = "Title";
+          titleInput.type = "text";
+          titleInput.value = draft.title;
+          titleField.appendChild(titleLabel);
+          titleField.appendChild(titleInput);
+
+          const idField = document.createElement("div");
+          const idLabel = document.createElement("label");
+          const idInput = document.createElement("input");
+          idLabel.textContent = "Suggested Task ID";
+          idInput.type = "text";
+          idInput.value = draft.suggestedTaskId;
+          idField.appendChild(idLabel);
+          idField.appendChild(idInput);
+
+          meta.appendChild(titleField);
+          meta.appendChild(idField);
+
+          const bodyField = document.createElement("div");
+          const bodyLabel = document.createElement("label");
+          const bodyTextarea = document.createElement("textarea");
+          bodyLabel.textContent = "Body";
+          bodyTextarea.value = draft.body;
+          bodyField.appendChild(bodyLabel);
+          bodyField.appendChild(bodyTextarea);
+
+          const actions = document.createElement("div");
+          actions.className = "button-row";
+          const saveButton = document.createElement("button");
+          saveButton.className = "secondary";
+          saveButton.type = "button";
+          saveButton.textContent = "Save to tasks/";
+
+          saveButton.addEventListener("click", async () => {
+            const payload = {
+              taskId: idInput.value.trim(),
+              title: titleInput.value.trim(),
+              body: bodyTextarea.value.trim(),
+              contextPack: contextPackInput.value.trim()
+            };
+
+            if (!payload.contextPack) {
+              setTaskDraftsStatus("Context pack path is required before saving a draft.", "error");
+              contextPackInput.focus();
+              return;
+            }
+
+            saveButton.disabled = true;
+            setTaskDraftsStatus("Saving reviewed task draft...");
+
+            try {
+              const response = await fetch(`${API_BASE}/tasks`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+              });
+              const result = await response.json();
+
+              if (!response.ok) {
+                throw new Error(result.error || "Failed to save reviewed task draft.");
+              }
+
+              setTaskDraftsStatus(
+                `Saved task file: ${result.task.path}`,
+                "success"
+              );
+              await loadSavedTasks();
+              card.remove();
+
+              if (taskDraftsList.children.length === 0) {
+                taskDraftsEmpty.hidden = false;
+              }
+            } catch (error) {
+              setTaskDraftsStatus(error.message, "error");
+            } finally {
+              saveButton.disabled = false;
+            }
+          });
+
+          actions.appendChild(saveButton);
+
+          card.appendChild(badge);
+          card.appendChild(meta);
+          card.appendChild(bodyField);
+          card.appendChild(actions);
+          taskDraftsList.appendChild(card);
+        });
       }
 
       function normalizeLogLookupId(value) {
@@ -479,6 +896,91 @@
           setResult({
             error: error.message
           });
+        }
+      }
+
+      async function loadSavedTasks() {
+        refreshTasksButton.disabled = true;
+        setTasksStatus("Loading saved task files...");
+
+        try {
+          const response = await fetch(`${API_BASE}/tasks`);
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to load saved task files.");
+          }
+
+          const tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+          renderSavedTasks(tasks);
+
+          if (tasks.length === 0) {
+            setTasksStatus("No saved task files found.");
+          } else {
+            setTasksStatus("Saved task files loaded.", "success");
+          }
+        } catch (error) {
+          renderSavedTasks([]);
+          savedTasksEmpty.hidden = false;
+          savedTasksEmpty.textContent =
+            "Saved task files could not be loaded from the local API.";
+          setTasksStatus(error.message, "error");
+        } finally {
+          refreshTasksButton.disabled = false;
+        }
+      }
+
+      async function loadTaskPlannerSource(runId) {
+        if (!runId) {
+          setTaskPlannerStatus("A run id is required to inspect Task Planner output.", "error");
+          setTaskPlannerSourceLabel("No task-planner run detected yet.");
+          setTaskPlannerSourceOutput("Task Planner source text will appear here when detected.");
+          setTaskDraftsStatus("No Task Planner draft source has been parsed yet.");
+          renderTaskDrafts([]);
+          return;
+        }
+
+        setTaskPlannerStatus("Checking Task Planner source text...");
+        setTaskPlannerSourceLabel(`Run id: ${runId}`);
+        setTaskPlannerSourceOutput("Loading Task Planner source text...");
+
+        try {
+          const response = await fetch(
+            `${API_BASE}/runs/${encodeURIComponent(runId)}/task-planner-source`
+          );
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to inspect Task Planner source text.");
+          }
+
+          if (!payload.detected) {
+            setTaskPlannerStatus("This run is not a completed Task Planner source.", "error");
+            setTaskPlannerSourceOutput(
+              "No Task Planner source text was detected for this run."
+            );
+            setTaskDraftsStatus(
+              "No unsaved drafts were produced because this run is not task-planner.",
+              ""
+            );
+            renderTaskDrafts([]);
+            return;
+          }
+
+          setTaskPlannerStatus("Task Planner source detected.", "success");
+          const sourceText = payload.sourceText || "No source text returned.";
+          const drafts = extractTaskDraftsFromSource(sourceText);
+          setTaskPlannerSourceOutput(sourceText);
+          renderTaskDrafts(drafts);
+          setTaskDraftsStatus(
+            `Prepared ${drafts.length} unsaved editable draft${drafts.length === 1 ? "" : "s"}.`,
+            "success"
+          );
+        } catch (error) {
+          setTaskPlannerStatus("Task Planner source detection failed.", "error");
+          setTaskPlannerSourceOutput(error.message);
+          setTaskDraftsStatus("Task draft extraction failed.", "error");
+          renderTaskDrafts([]);
         }
       }
 
@@ -551,6 +1053,26 @@
             logIdInput.value = payload.logId;
             setLogStatus("Run completed. The returned log id is ready to fetch.", "success");
           }
+
+          if (payload && typeof payload === "object" && typeof payload.id === "string") {
+            if (payload.agent === "task-planner") {
+              loadTaskPlannerSource(payload.id);
+            } else {
+              setTaskPlannerStatus(
+                "Latest run is not task-planner. Detection stays conservative.",
+                ""
+              );
+              setTaskPlannerSourceLabel(`Run id: ${payload.id}`);
+              setTaskPlannerSourceOutput(
+                "Task Planner source text will only be shown for completed task-planner runs."
+              );
+              setTaskDraftsStatus(
+                "Unsaved drafts are shown only for completed task-planner runs.",
+                ""
+              );
+              renderTaskDrafts([]);
+            }
+          }
         } catch (error) {
           setStatus("Run submission failed.", "error");
           setResult({
@@ -604,7 +1126,12 @@
         }
       });
 
+      refreshTasksButton.addEventListener("click", () => {
+        loadSavedTasks();
+      });
+
       loadAgents();
+      loadSavedTasks();
     </script>
   </body>
 </html>
