@@ -1,0 +1,14 @@
+{
+  "tasks": [
+    {
+      "id": "T1-verify-runner-contract",
+      "file": "tasks/T1-verify-runner-contract.md",
+      "status": "done"
+    },
+    {
+      "id": "add-minimal-agent-runner-task-queue",
+      "file": "tasks/add-minimal-agent-runner-task-queue.md",
+      "status": "done"
+    }
+  ]
+}

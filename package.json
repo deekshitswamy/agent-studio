@@ -1,0 +1,12 @@
+{
+  "name": "agent-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal CLI for running the DIVYA Agent Company orchestrator step from repo files.",
+  "bin": {
+    "run-agent": "./bin/run-agent.js"
+  },
+  "scripts": {
+    "run-agent": "node ./bin/run-agent.js"
+  }
+}
