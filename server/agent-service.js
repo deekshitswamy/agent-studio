@@ -4,6 +4,7 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { validateTaskFile } = require("../src/task-file");
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_HOST = "127.0.0.1";
@@ -330,52 +331,153 @@ function getSavedTaskPath(taskId) {
   return path.join(TASKS_DIR_PATH, `${normalizedTaskId}.md`);
 }
 
+function parseDraftSections(markdown) {
+  const sections = new Map();
+  let currentSection = null;
+  let currentLines = [];
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const match = line.match(/^##\s+(.*)$/);
+
+    if (match) {
+      if (currentSection) {
+        sections.set(currentSection, currentLines);
+      }
+      currentSection = match[1].trim();
+      currentLines = [];
+      continue;
+    }
+
+    if (currentSection) {
+      currentLines.push(line);
+    }
+  }
+
+  if (currentSection) {
+    sections.set(currentSection, currentLines);
+  }
+
+  return sections;
+}
+
+function trimSectionLines(lines = []) {
+  while (lines.length > 0 && lines[0].trim() === "") {
+    lines.shift();
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1].trim() === "") {
+    lines.pop();
+  }
+
+  return lines;
+}
+
+function buildSectionLines({ preferredLines, fallbackLines }) {
+  const normalizedPreferred = trimSectionLines([...(preferredLines || [])]);
+
+  if (normalizedPreferred.length > 0) {
+    return normalizedPreferred;
+  }
+
+  return trimSectionLines([...(fallbackLines || [])]);
+}
+
 function buildSavedTaskMarkdown({ taskId, title, body, contextPack }) {
-  return [
-    `# Task: ${title.trim()}`,
-    "",
-    "## Task",
-    "",
-    `- \`${normalizeTaskId(taskId)}\``,
-    "",
-    "## Status",
-    "",
-    "- `pending`",
-    "",
-    "## Objective",
-    "",
-    `- ${title.trim()}`,
-    "",
-    "## Context Pack",
-    "",
-    `- \`${contextPack.trim()}\``,
-    "",
-    "## Scope",
-    "",
-    "- Review and refine the saved draft content below.",
-    "- Keep changes bounded to the selected task.",
-    "",
-    "## Out of Scope",
-    "",
-    "- Automatic execution",
-    "- Queue insertion",
-    "- Background jobs",
-    "",
-    "## Acceptance Criteria",
-    "",
-    "- Reviewed draft content is preserved in this file.",
-    "- The saved task file remains human-controlled.",
-    "",
-    "## Verification",
-    "",
-    `- \`node ./bin/run-agent.js task validate tasks/${normalizeTaskId(taskId)}.md\``,
-    "",
-    "## Dev Handoff",
-    "",
-    "- Reviewed draft source:",
-    "",
-    body.trim()
-  ].join("\n");
+  const normalizedTaskId = normalizeTaskId(taskId);
+  const normalizedTitle = title.trim();
+  const normalizedContextPack = contextPack.trim();
+  const normalizedBody = body.trim();
+  const draftSections = parseDraftSections(normalizedBody);
+  const hasStructuredSections = draftSections.size > 0;
+
+  const sectionContent = new Map([
+    [
+      "Task",
+      [`- \`${normalizedTaskId}\``]
+    ],
+    [
+      "Status",
+      buildSectionLines({
+        preferredLines: draftSections.get("Status"),
+        fallbackLines: ["- `pending`"]
+      })
+    ],
+    [
+      "Objective",
+      buildSectionLines({
+        preferredLines: draftSections.get("Objective"),
+        fallbackLines: [`- ${normalizedTitle}`]
+      })
+    ],
+    [
+      "Context Pack",
+      [`- \`${normalizedContextPack}\``]
+    ],
+    [
+      "Scope",
+      buildSectionLines({
+        preferredLines: draftSections.get("Scope"),
+        fallbackLines: [
+          "- Review and refine the saved draft content below.",
+          "- Keep changes bounded to the selected task."
+        ]
+      })
+    ],
+    [
+      "Out of Scope",
+      buildSectionLines({
+        preferredLines: draftSections.get("Out of Scope"),
+        fallbackLines: [
+          "- Automatic execution",
+          "- Queue insertion",
+          "- Background jobs"
+        ]
+      })
+    ],
+    [
+      "Acceptance Criteria",
+      buildSectionLines({
+        preferredLines: draftSections.get("Acceptance Criteria"),
+        fallbackLines: [
+          "- Reviewed draft content is preserved in this file.",
+          "- The saved task file remains human-controlled."
+        ]
+      })
+    ],
+    [
+      "Verification",
+      buildSectionLines({
+        preferredLines: draftSections.get("Verification"),
+        fallbackLines: [`- \`node ./bin/run-agent.js task validate tasks/${normalizedTaskId}.md\``]
+      })
+    ],
+    [
+      "Dev Handoff",
+      buildSectionLines({
+        preferredLines: draftSections.get("Dev Handoff"),
+        fallbackLines: hasStructuredSections
+          ? [
+              "- Review the normalized sections above before running Dev.",
+              "- Keep the task human-reviewed and human-selected."
+            ]
+          : [
+              "- Reviewed draft source:",
+              "",
+              normalizedBody
+            ]
+      })
+    ]
+  ]);
+
+  const output = [`# Task: ${normalizedTitle}`, ""];
+
+  for (const [sectionName, lines] of sectionContent.entries()) {
+    output.push(`## ${sectionName}`, "");
+    output.push(...lines);
+    output.push("");
+  }
+
+  return output.join("\n").trimEnd();
 }
 
 function saveReviewedTaskDraft(body) {
@@ -394,11 +496,23 @@ function saveReviewedTaskDraft(body) {
   const markdown = buildSavedTaskMarkdown(body);
   fs.writeFileSync(taskPath, `${markdown}\n`, "utf8");
 
+  const validation = validateTaskFile(taskPath);
+
+  if (!validation.valid) {
+    fs.unlinkSync(taskPath);
+    const error = new Error(`Saved task file failed validation: ${validation.errors.join("; ")}`);
+    error.statusCode = 500;
+    throw error;
+  }
+
   return {
     saved: true,
     task: {
       name: path.basename(taskPath),
       path: `tasks/${path.basename(taskPath)}`
+    },
+    validation: {
+      valid: true
     }
   };
 }

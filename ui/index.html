@@ -591,15 +591,112 @@
           const item = document.createElement("li");
           const name = document.createElement("div");
           const pathLabel = document.createElement("div");
+          const actions = document.createElement("div");
+          const runDevButton = document.createElement("button");
 
           name.textContent = task.name || "(unnamed task)";
           pathLabel.className = "task-path";
           pathLabel.textContent = task.path || "";
+          actions.className = "button-row";
+          runDevButton.className = "secondary";
+          runDevButton.type = "button";
+          runDevButton.textContent = "Run Dev";
+
+          runDevButton.addEventListener("click", async () => {
+            const contextPack = contextPackInput.value.trim();
+
+            if (!contextPack) {
+              setStatus("Context pack path is required before running Dev.", "error");
+              setResult({
+                error: "Context pack path is required before running Dev from a saved task."
+              });
+              contextPackInput.focus();
+              return;
+            }
+
+            await submitRunRequest({
+              contextPack,
+              agent: "dev",
+              task: task.path
+            });
+          });
 
           item.appendChild(name);
           item.appendChild(pathLabel);
+          actions.appendChild(runDevButton);
+          item.appendChild(actions);
           savedTasksList.appendChild(item);
         });
+      }
+
+      async function submitRunRequest(body) {
+        runButton.disabled = true;
+        setStatus("Submitting run...");
+        setResult({
+          status: "submitting"
+        });
+
+        try {
+          const response = await fetch(`${API_BASE}/runs`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
+          });
+
+          const rawText = await response.text();
+          let payload = rawText;
+
+          try {
+            payload = JSON.parse(rawText);
+          } catch (error) {
+            payload = rawText;
+          }
+
+          if (!response.ok) {
+            const message =
+              payload && typeof payload === "object" && payload.error
+                ? payload.error
+                : "Run request failed.";
+            throw new Error(message);
+          }
+
+          setStatus("Run submitted successfully.", "success");
+          setResult(payload);
+
+          if (payload && typeof payload === "object" && typeof payload.logId === "string") {
+            logIdInput.value = payload.logId;
+            setLogStatus("Run completed. The returned log id is ready to fetch.", "success");
+          }
+
+          if (payload && typeof payload === "object" && typeof payload.id === "string") {
+            if (payload.agent === "task-planner") {
+              loadTaskPlannerSource(payload.id);
+            } else {
+              setTaskPlannerStatus(
+                "Latest run is not task-planner. Detection stays conservative.",
+                ""
+              );
+              setTaskPlannerSourceLabel(`Run id: ${payload.id}`);
+              setTaskPlannerSourceOutput(
+                "Task Planner source text will only be shown for completed task-planner runs."
+              );
+              setTaskDraftsStatus(
+                "Unsaved drafts are shown only for completed task-planner runs.",
+                ""
+              );
+              renderTaskDrafts([]);
+            }
+          }
+        } catch (error) {
+          setStatus("Run submission failed.", "error");
+          setResult({
+            error: error.message
+          });
+        } finally {
+          runButton.disabled = false;
+        }
       }
 
       function setTaskPlannerStatus(message, tone = "") {
@@ -1014,73 +1111,7 @@
           body.withArtifact = withArtifact;
         }
 
-        runButton.disabled = true;
-        setStatus("Submitting run...");
-        setResult({
-          status: "submitting"
-        });
-
-        try {
-          const response = await fetch(`${API_BASE}/runs`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body)
-          });
-
-          const rawText = await response.text();
-          let payload = rawText;
-
-          try {
-            payload = JSON.parse(rawText);
-          } catch (error) {
-            payload = rawText;
-          }
-
-          if (!response.ok) {
-            const message =
-              payload && typeof payload === "object" && payload.error
-                ? payload.error
-                : "Run request failed.";
-            throw new Error(message);
-          }
-
-          setStatus("Run submitted successfully.", "success");
-          setResult(payload);
-
-          if (payload && typeof payload === "object" && typeof payload.logId === "string") {
-            logIdInput.value = payload.logId;
-            setLogStatus("Run completed. The returned log id is ready to fetch.", "success");
-          }
-
-          if (payload && typeof payload === "object" && typeof payload.id === "string") {
-            if (payload.agent === "task-planner") {
-              loadTaskPlannerSource(payload.id);
-            } else {
-              setTaskPlannerStatus(
-                "Latest run is not task-planner. Detection stays conservative.",
-                ""
-              );
-              setTaskPlannerSourceLabel(`Run id: ${payload.id}`);
-              setTaskPlannerSourceOutput(
-                "Task Planner source text will only be shown for completed task-planner runs."
-              );
-              setTaskDraftsStatus(
-                "Unsaved drafts are shown only for completed task-planner runs.",
-                ""
-              );
-              renderTaskDrafts([]);
-            }
-          }
-        } catch (error) {
-          setStatus("Run submission failed.", "error");
-          setResult({
-            error: error.message
-          });
-        } finally {
-          runButton.disabled = false;
-        }
+        await submitRunRequest(body);
       });
 
       fetchLogsButton.addEventListener("click", async () => {
