@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Studio</title>
+    <style>
+      :root {
+        --bg: #f6f3ea;
+        --panel: #fffdf8;
+        --panel-strong: #f0eadc;
+        --ink: #1f1d1a;
+        --muted: #6d665d;
+        --line: #d8cfbf;
+        --accent: #0e6b5c;
+        --accent-strong: #0b5448;
+        --shadow: 0 20px 40px rgba(31, 29, 26, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua",
+          Palatino, Georgia, serif;
+        background:
+          radial-gradient(circle at top left, rgba(14, 107, 92, 0.12), transparent 32%),
+          linear-gradient(180deg, #fbf8f1 0%, var(--bg) 100%);
+        color: var(--ink);
+      }
+
+      .shell {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      .hero {
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(135deg, #fffdf8 0%, #f3eee1 100%);
+        box-shadow: var(--shadow);
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        font-size: 0.78rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        font-weight: 700;
+      }
+
+      h1 {
+        font-size: clamp(2.2rem, 5vw, 4rem);
+        line-height: 0.95;
+        max-width: 10ch;
+      }
+
+      .hero p {
+        max-width: 58ch;
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 1.02rem;
+        line-height: 1.55;
+      }
+
+      .hero-notes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .note {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(14, 107, 92, 0.08);
+        color: var(--accent-strong);
+        font-size: 0.92rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 20px;
+        margin-top: 22px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .panel-header {
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(240, 234, 220, 0.55);
+      }
+
+      .panel-header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .panel-body {
+        padding: 20px;
+      }
+
+      form {
+        display: grid;
+        gap: 16px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      label {
+        font-size: 0.95rem;
+        font-weight: 700;
+      }
+
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
+      input,
+      select,
+      button,
+      textarea {
+        width: 100%;
+        font: inherit;
+      }
+
+      input,
+      select {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      input:focus,
+      select:focus,
+      button:focus {
+        outline: 2px solid rgba(14, 107, 92, 0.18);
+        outline-offset: 2px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 14px;
+        padding: 12px 16px;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: #f7f7f5;
+      }
+
+      .primary:hover {
+        background: var(--accent-strong);
+      }
+
+      .secondary {
+        background: var(--panel-strong);
+        color: var(--ink);
+      }
+
+      .placeholder,
+      pre {
+        margin: 0;
+        padding: 16px;
+        border-radius: 16px;
+        background: #fcfaf4;
+        border: 1px dashed var(--line);
+        color: var(--muted);
+        line-height: 1.55;
+        overflow: auto;
+      }
+
+      pre {
+        white-space: pre-wrap;
+      }
+
+      .stack {
+        display: grid;
+        gap: 20px;
+      }
+
+      .small {
+        font-size: 0.88rem;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 40px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: #fcfaf4;
+        color: var(--muted);
+      }
+
+      .status[data-tone="error"] {
+        border-color: #d8b2aa;
+        background: #fff4f1;
+        color: #8b3a2d;
+      }
+
+      .status[data-tone="success"] {
+        border-color: #b8d0c8;
+        background: #f4fbf7;
+        color: #205545;
+      }
+
+      @media (max-width: 860px) {
+        .grid,
+        .row {
+          grid-template-columns: 1fr;
+        }
+
+        .shell {
+          padding: 20px 14px 36px;
+        }
+
+        .hero,
+        .panel-body,
+        .panel-header {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Agent Studio v8</p>
+        <h1>Local UI Shell</h1>
+        <p>
+          A minimal local-first shell for choosing an agent, supplying scoped
+          repo inputs, and viewing run results and logs. API wiring is
+          intentionally left as a placeholder in this step.
+        </p>
+        <div class="hero-notes">
+          <span class="note">Plain HTML, CSS, and JS only</span>
+          <span class="note">Context pack remains primary input</span>
+          <span class="note">No backend behavior changes</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel">
+          <div class="panel-header">
+            <p class="eyebrow">Run Agent</p>
+            <h2>Execution Form</h2>
+            <p>
+              Minimal local-first form wired to <code>GET /agents</code> and
+              <code>POST /runs</code>.
+            </p>
+          </div>
+          <div class="panel-body">
+            <form id="run-form">
+              <div class="field">
+                <label for="agent">Agent</label>
+                <select id="agent" name="agent">
+                  <option value="">Loading agents...</option>
+                </select>
+                <p class="hint">Loaded from the local API when available.</p>
+              </div>
+
+              <div class="field">
+                <label for="context-pack">Context Pack Path</label>
+                <input
+                  id="context-pack"
+                  name="context-pack"
+                  type="text"
+                  value="context-packs/agent-studio-v8-ui.md"
+                  required
+                />
+                <p class="hint">Required primary input for every run.</p>
+              </div>
+
+              <div class="row">
+                <div class="field">
+                  <label for="task-path">Task Path</label>
+                  <input
+                    id="task-path"
+                    name="task-path"
+                    type="text"
+                    placeholder="tasks/example-task.md"
+                  />
+                  <p class="hint">Optional. Used for direct Dev runs only.</p>
+                </div>
+
+                <div class="field">
+                  <label for="artifact-path">Artifact Path</label>
+                  <input
+                    id="artifact-path"
+                    name="artifact-path"
+                    type="text"
+                    placeholder="logs/example-artifact.md"
+                  />
+                  <p class="hint">Optional supporting artifact context.</p>
+                </div>
+              </div>
+
+              <div class="button-row">
+                <button class="primary" id="run-button" type="submit">Run Agent</button>
+              </div>
+              <p class="status small" id="run-status">
+                Start the local API server, then submit a run.
+              </p>
+            </form>
+          </div>
+        </div>
+
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Run Result</p>
+              <h2>Result Panel</h2>
+              <p>Displays plain success and error responses from <code>POST /runs</code>.</p>
+            </div>
+            <div class="panel-body">
+              <pre id="run-result">{
+  "id": "<run-id>",
+  "agent": "pm",
+  "status": "pending-display",
+  "logId": "<log-id>"
+}</pre>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Logs</p>
+              <h2>Log Viewer</h2>
+              <p>Fetches plain text output from <code>GET /logs/:id</code>.</p>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="log-id">Log ID</label>
+                <input
+                  id="log-id"
+                  name="log-id"
+                  type="text"
+                  placeholder="2026-05-02T08-29-36-887Z-26516.log"
+                />
+                <p class="hint">Paste either the base run id or the returned <code>logId</code>.</p>
+              </div>
+              <div class="button-row">
+                <button class="secondary" id="fetch-logs-button" type="button">Fetch Logs</button>
+              </div>
+              <p class="status small" id="log-status">
+                Enter a log id, or submit a run to reuse its returned log id.
+              </p>
+              <pre id="log-output">Log content will appear here.</pre>
+              <p class="placeholder small">
+                This viewer stays plain text only. No streaming, polling, or
+                search is added in this step.
+              </p>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script>
+      const API_BASE =
+        window.location.protocol === "file:" ? "http://127.0.0.1:3000" : "";
+
+      const form = document.querySelector("#run-form");
+      const agentSelect = document.querySelector("#agent");
+      const contextPackInput = document.querySelector("#context-pack");
+      const taskPathInput = document.querySelector("#task-path");
+      const artifactPathInput = document.querySelector("#artifact-path");
+      const runButton = document.querySelector("#run-button");
+      const runStatus = document.querySelector("#run-status");
+      const runResult = document.querySelector("#run-result");
+      const logIdInput = document.querySelector("#log-id");
+      const fetchLogsButton = document.querySelector("#fetch-logs-button");
+      const logStatus = document.querySelector("#log-status");
+      const logOutput = document.querySelector("#log-output");
+
+      function setStatus(message, tone = "") {
+        runStatus.textContent = message;
+        runStatus.dataset.tone = tone;
+      }
+
+      function setResult(payload) {
+        runResult.textContent =
+          typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+      }
+
+      function setLogStatus(message, tone = "") {
+        logStatus.textContent = message;
+        logStatus.dataset.tone = tone;
+      }
+
+      function setLogOutput(payload) {
+        logOutput.textContent = payload;
+      }
+
+      function normalizeLogLookupId(value) {
+        const normalized = value.trim();
+
+        if (!normalized) {
+          return "";
+        }
+
+        return normalized.endsWith(".log") ? normalized.slice(0, -4) : normalized;
+      }
+
+      async function loadAgents() {
+        setStatus("Loading agents from the local API...");
+
+        try {
+          const response = await fetch(`${API_BASE}/agents`);
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to load agents.");
+          }
+
+          const agents = Array.isArray(payload.agents) ? payload.agents : [];
+
+          if (agents.length === 0) {
+            throw new Error("No agents were returned by the API.");
+          }
+
+          agentSelect.innerHTML = "";
+
+          agents.forEach((agent) => {
+            const option = document.createElement("option");
+            option.value = agent;
+            option.textContent = agent;
+            agentSelect.appendChild(option);
+          });
+
+          setStatus("Agents loaded.", "success");
+        } catch (error) {
+          agentSelect.innerHTML = '<option value="">Agents unavailable</option>';
+          setStatus(
+            "Could not load agents. If you opened this page directly, the browser may block cross-origin local API requests until the UI is served from the same origin.",
+            "error"
+          );
+          setResult({
+            error: error.message
+          });
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const contextPack = contextPackInput.value.trim();
+        const agent = agentSelect.value.trim();
+        const task = taskPathInput.value.trim();
+        const withArtifact = artifactPathInput.value.trim();
+
+        if (!contextPack) {
+          setStatus("Context pack path is required.", "error");
+          setResult({
+            error: "Context pack path is required before submitting a run."
+          });
+          contextPackInput.focus();
+          return;
+        }
+
+        const body = {
+          contextPack,
+          agent
+        };
+
+        if (task) {
+          body.task = task;
+        }
+
+        if (withArtifact) {
+          body.withArtifact = withArtifact;
+        }
+
+        runButton.disabled = true;
+        setStatus("Submitting run...");
+        setResult({
+          status: "submitting"
+        });
+
+        try {
+          const response = await fetch(`${API_BASE}/runs`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
+          });
+
+          const rawText = await response.text();
+          let payload = rawText;
+
+          try {
+            payload = JSON.parse(rawText);
+          } catch (error) {
+            payload = rawText;
+          }
+
+          if (!response.ok) {
+            const message =
+              payload && typeof payload === "object" && payload.error
+                ? payload.error
+                : "Run request failed.";
+            throw new Error(message);
+          }
+
+          setStatus("Run submitted successfully.", "success");
+          setResult(payload);
+
+          if (payload && typeof payload === "object" && typeof payload.logId === "string") {
+            logIdInput.value = payload.logId;
+            setLogStatus("Run completed. The returned log id is ready to fetch.", "success");
+          }
+        } catch (error) {
+          setStatus("Run submission failed.", "error");
+          setResult({
+            error: error.message
+          });
+        } finally {
+          runButton.disabled = false;
+        }
+      });
+
+      fetchLogsButton.addEventListener("click", async () => {
+        const requestedId = normalizeLogLookupId(logIdInput.value);
+
+        if (!requestedId) {
+          setLogStatus("A log id is required.", "error");
+          setLogOutput("Provide a log id before fetching logs.");
+          logIdInput.focus();
+          return;
+        }
+
+        fetchLogsButton.disabled = true;
+        setLogStatus("Fetching log content...");
+        setLogOutput("Loading log content...");
+
+        try {
+          const response = await fetch(
+            `${API_BASE}/logs/${encodeURIComponent(requestedId)}`
+          );
+          const rawText = await response.text();
+
+          if (!response.ok) {
+            let message = "Failed to fetch logs.";
+
+            try {
+              const payload = JSON.parse(rawText);
+              message = payload.error || message;
+            } catch (error) {
+              message = rawText || message;
+            }
+
+            throw new Error(message);
+          }
+
+          setLogStatus("Log fetched successfully.", "success");
+          setLogOutput(rawText);
+        } catch (error) {
+          setLogStatus("Log fetch failed.", "error");
+          setLogOutput(error.message);
+        } finally {
+          fetchLogsButton.disabled = false;
+        }
+      });
+
+      loadAgents();
+    </script>
+  </body>
+</html>
