@@ -63,6 +63,18 @@ Assistant/Orchestrator Identity: DIVYA
   - project-scoped tasks
   - project-scoped runs and logs
   - legacy fallback when no project is selected
+- `v17`:
+  - Docker-based project runner sandbox
+  - legacy non-project runs still use local execution
+  - project-scoped runs execute through a short-lived runner container
+- `v18`:
+  - Run Idea flow in the UI
+  - PM run followed by Task Planner run
+  - drafts surface in the existing Unsaved Drafts panel
+- `v19`:
+  - structured Dev write artifacts
+  - safe project-scoped file application after Dev runs
+  - no write application for non-project runs
 
 ## Current Direct-Agent Contract
 
@@ -100,6 +112,9 @@ Assistant/Orchestrator Identity: DIVYA
 - `projects/<project-id>/tasks/` holds optional project-scoped task files.
 - `tasks.json` is the optional queue state file.
 - `projects/<project-id>/.local/runs/` holds optional project-scoped run artifacts.
+- `docker-compose.yml` now defines both the local API/UI service and the short-lived project runner service.
+- `ui/index.html` now supports both direct runs and an idea-to-drafts PM -> Task Planner flow.
+- project-scoped Dev runs can now emit structured write artifacts that the API validates and applies inside `projects/<project-id>/` only.
 - `src/tool-router.js` gates local tool usage by role.
 - `src/context-builder.js` keeps agent context narrow and deterministic.
 - `bin/mcp-server.js` and `src/mcp/` hold the local read-only MCP prototype.
@@ -115,9 +130,11 @@ Assistant/Orchestrator Identity: DIVYA
 - no background or async workflow engine
 - no database-backed state
 - no project creation flow
+- no production isolation guarantees for the Docker sandbox
 - no write-enabled MCP tools
 - no shell execution through MCP
 - no external network integrations for the MCP layer
+- no patch/delete/rename support for Dev write artifacts
 
 ## Recommended Next Milestone
 
@@ -143,6 +160,9 @@ If MCP work continues, the safest next milestone is a small, explicit operator/w
    - [releases/agent-studio-v8-ui.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v8-ui.md)
    - [releases/agent-studio-v9-task-drafts.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v9-task-drafts.md)
    - [releases/agent-studio-v13-project-workspaces.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v13-project-workspaces.md)
+   - [releases/agent-studio-v17-project-runner.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v17-project-runner.md)
+   - [releases/agent-studio-v18-run-idea.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v18-run-idea.md)
+   - [releases/agent-studio-v19-dev-write-artifacts.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v19-dev-write-artifacts.md)
 6. Choose one context pack or one selected task before running anything.
 7. Keep scope bounded to that single execution.
 

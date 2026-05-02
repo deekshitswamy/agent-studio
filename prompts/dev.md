@@ -27,6 +27,12 @@ Working rules:
 - do not refactor unrelated areas
 - do not bundle multiple tasks into one execution
 - do not add UI, async automation, generalized orchestration, or chain expansion unless the selected task explicitly requires it
+- if this execution needs project-scoped file creation or replacement, include a final `## Write Artifact` section with exactly one fenced `json` block
+- the write artifact must use this shape only:
+  - `{ "version": 1, "writes": [ { "path": "projects/<project-id>/relative/path.ext", "content": "full file content" } ] }`
+- include write entries only for explicit create-or-replace full file content
+- do not describe file writes only in prose when a write artifact is required
+- do not emit write artifacts for non-project-scoped work
 
 Required output format:
 - Summary
@@ -38,6 +44,7 @@ Required output format:
 - Scope Drift Check
 - Dev Log Update
 - Recommended Next Handoff
+- `Write Artifact` section only when explicit project-scoped file writes are intended
 
 Non-goals:
 - do not execute multiple tasks

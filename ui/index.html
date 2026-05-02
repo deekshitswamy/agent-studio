@@ -526,6 +526,17 @@
                 </p>
               </div>
 
+              <div class="field">
+                <label for="idea-input">Idea</label>
+                <textarea
+                  id="idea-input"
+                  name="idea-input"
+                  rows="5"
+                  placeholder="Describe the feature, problem, or idea you want PM and Task Planner to turn into task drafts."
+                ></textarea>
+                <p class="hint">Optional. Used only by the human-triggered Run Idea flow.</p>
+              </div>
+
               <div class="row">
                 <div class="field">
                   <label for="task-path">Task Path</label>
@@ -552,6 +563,7 @@
 
               <div class="button-row">
                 <button class="primary" id="run-button" type="submit">Run Agent</button>
+                <button class="secondary" id="run-idea-button" type="button">Run Idea</button>
               </div>
               <p class="status small" id="run-status">
                 Start the local API server, then submit a run.
@@ -697,7 +709,9 @@
       const contextPackInput = document.querySelector("#context-pack");
       const taskPathInput = document.querySelector("#task-path");
       const artifactPathInput = document.querySelector("#artifact-path");
+      const ideaInput = document.querySelector("#idea-input");
       const runButton = document.querySelector("#run-button");
+      const runIdeaButton = document.querySelector("#run-idea-button");
       const runStatus = document.querySelector("#run-status");
       const runResult = document.querySelector("#run-result");
       const projectIdInput = document.querySelector("#project-id");
@@ -823,6 +837,21 @@
 
         const separator = url.includes("?") ? "&" : "?";
         return `${url}${separator}project=${encodeURIComponent(projectId)}`;
+      }
+
+      function getScopedRunLogPath(logId) {
+        const normalizedLogId = String(logId || "").trim();
+        const projectId = getSelectedProjectId();
+
+        if (!normalizedLogId) {
+          return "";
+        }
+
+        if (projectId) {
+          return `projects/${projectId}/.local/runs/${normalizedLogId}`;
+        }
+
+        return `.local/runs/${normalizedLogId}`;
       }
 
       async function runDevForTask(taskPath) {
@@ -998,6 +1027,7 @@
         }
 
         runButton.disabled = true;
+        runIdeaButton.disabled = true;
         setStatus("Submitting run...");
         setResult({
           status: "submitting"
@@ -1077,10 +1107,12 @@
           };
         } finally {
           runButton.disabled = false;
+          runIdeaButton.disabled = false;
         }
 
         return {
-          ok: true
+          ok: true,
+          payload
         };
       }
 
@@ -1580,6 +1612,47 @@
 
       projectIdInput.addEventListener("change", () => {
         loadSavedTasks();
+      });
+
+      runIdeaButton.addEventListener("click", async () => {
+        const contextPack = contextPackInput.value.trim();
+        const idea = ideaInput.value.trim();
+
+        if (!contextPack) {
+          setStatus("Context pack path is required before running an idea.", "error");
+          setResult({
+            error: "Context pack path is required before using Run Idea."
+          });
+          contextPackInput.focus();
+          return;
+        }
+
+        if (!idea) {
+          setStatus("Idea text is required before running an idea.", "error");
+          setResult({
+            error: "Provide an idea before using Run Idea."
+          });
+          ideaInput.focus();
+          return;
+        }
+
+        setStatus("Running PM from the idea...");
+        const pmRun = await submitRunRequest({
+          contextPack,
+          agent: "pm",
+          idea
+        });
+
+        if (!pmRun.ok || !pmRun.payload || typeof pmRun.payload.logId !== "string") {
+          return;
+        }
+
+        setStatus("Running Task Planner from PM output...");
+        await submitRunRequest({
+          contextPack,
+          agent: "task-planner",
+          withArtifact: getScopedRunLogPath(pmRun.payload.logId)
+        });
       });
 
       fetchLogsButton.addEventListener("click", async () => {

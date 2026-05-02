@@ -5,10 +5,13 @@ const http = require("http");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { validateTaskFile } = require("../src/task-file");
+const { validateStructuredWriteArtifactShape } = require("../src/dev-write-artifacts");
+const { resolveSafeProjectWritePath } = require("../src/mcp/safe-write-paths");
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_HOST = "127.0.0.1";
 const SUPPORTED_AGENTS = Object.freeze(["pm", "architect", "task-planner", "dev", "qa"]);
+const PROJECT_RUNNER_SERVICE_NAME = "agent-studio-project-runner";
 const RUN_ARTIFACT_DIR = path.resolve(__dirname, "..", ".local", "runs");
 const UI_INDEX_PATH = path.resolve(__dirname, "..", "ui", "index.html");
 const TASKS_DIR_PATH = path.resolve(__dirname, "..", "tasks");
@@ -95,6 +98,14 @@ function validateRunRequest(body) {
   }
 
   if (
+    body.idea !== undefined &&
+    body.idea !== null &&
+    (typeof body.idea !== "string" || !body.idea.trim())
+  ) {
+    throw new Error("POST /runs `idea` must be a non-empty string when provided.");
+  }
+
+  if (
     body.project !== undefined &&
     body.project !== null &&
     (typeof body.project !== "string" || !body.project.trim())
@@ -122,7 +133,11 @@ function ensureRunArtifactDir(projectId = "") {
 }
 
 function buildRunCommand(body) {
-  const args = ["./bin/run-agent.js", body.contextPack.trim(), "--agent", body.agent.trim()];
+  return ["./bin/run-agent.js", ...buildRunAgentArguments(body)];
+}
+
+function buildRunAgentArguments(body) {
+  const args = [body.contextPack.trim(), "--agent", body.agent.trim()];
 
   if (body.llm === true) {
     args.push("--llm");
@@ -139,6 +154,83 @@ function buildRunCommand(body) {
   return args;
 }
 
+function buildIdeaArtifactMarkdown(idea) {
+  return [
+    "# Idea",
+    "",
+    idea.trim(),
+    "",
+    "## Notes",
+    "",
+    "- Treat this as optional supporting material for the current run.",
+    "- Keep the context pack as the primary input."
+  ].join("\n");
+}
+
+function buildProjectRunnerCommand({ body, repoRoot, projectId }) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  const hostProjectPath = path.join(repoRoot, "projects", normalizedProjectId);
+  const containerProjectPath = `/workspace/projects/${normalizedProjectId}`;
+  const hostLogsPath = path.join(repoRoot, "logs");
+
+  return {
+    command: "docker",
+    args: [
+      "compose",
+      "run",
+      "--rm",
+      "-T",
+      "-v",
+      `${repoRoot}:/workspace:ro`,
+      "-v",
+      `${hostProjectPath}:${containerProjectPath}`,
+      "-v",
+      `${hostLogsPath}:/workspace/logs`,
+      PROJECT_RUNNER_SERVICE_NAME,
+      ...buildRunAgentArguments(body)
+    ],
+    options: {
+      cwd: repoRoot,
+      encoding: "utf8"
+    }
+  };
+}
+
+function executeRunProcess({ body, repoRoot }) {
+  if (typeof body.project === "string" && body.project.trim()) {
+    const projectCommand = buildProjectRunnerCommand({
+      body,
+      repoRoot,
+      projectId: body.project.trim()
+    });
+
+    return {
+      invocation: [projectCommand.command, ...projectCommand.args],
+      result: spawnSync(projectCommand.command, projectCommand.args, projectCommand.options)
+    };
+  }
+
+  const localArgs = buildRunCommand(body);
+  return {
+    invocation: [process.execPath, ...localArgs],
+    result: spawnSync(process.execPath, localArgs, {
+      cwd: repoRoot,
+      encoding: "utf8"
+    })
+  };
+}
+
+function createIdeaArtifactFile({ body, repoRoot, runArtifactDir, runId }) {
+  if (typeof body.idea !== "string" || !body.idea.trim()) {
+    return null;
+  }
+
+  const artifactPath = path.join(runArtifactDir, `${runId}.idea.md`);
+  const artifactMarkdown = buildIdeaArtifactMarkdown(body.idea);
+  fs.writeFileSync(artifactPath, `${artifactMarkdown}\n`, "utf8");
+  return path.relative(repoRoot, artifactPath);
+}
+
 function runAgentStudioCommand({ body, repoRoot }) {
   const startedAt = new Date().toISOString();
   const id = createRunId();
@@ -146,19 +238,47 @@ function runAgentStudioCommand({ body, repoRoot }) {
   const runArtifactDir = getRunArtifactDirectoryForProject(body.project || "");
   const metadataPath = path.join(runArtifactDir, `${id}.json`);
   const logPath = path.join(runArtifactDir, logId);
-  const args = buildRunCommand(body);
-  const result = spawnSync(process.execPath, args, {
-    cwd: repoRoot,
-    encoding: "utf8"
+  const executionBody = { ...body };
+  const generatedIdeaArtifactPath = createIdeaArtifactFile({
+    body: executionBody,
+    repoRoot,
+    runArtifactDir,
+    runId: id
+  });
+
+  if (generatedIdeaArtifactPath && !executionBody.withArtifact) {
+    executionBody.withArtifact = generatedIdeaArtifactPath;
+  }
+
+  const { invocation, result } = executeRunProcess({
+    body: executionBody,
+    repoRoot
   });
   const completedAt = new Date().toISOString();
   const stdout = result.stdout || "";
   const stderr = result.stderr || "";
-  const exitCode = typeof result.status === "number" ? result.status : 1;
-  const status = exitCode === 0 ? "completed" : "failed";
+  let exitCode = typeof result.status === "number" ? result.status : 1;
+  let status = exitCode === 0 ? "completed" : "failed";
+  let writeArtifactMetadata = null;
 
-  const logOutput = [
-    `command: ${[process.execPath, ...args].join(" ")}`,
+  try {
+    writeArtifactMetadata = maybeApplyDevWriteArtifact({
+      body,
+      repoRoot,
+      stdout
+    });
+  } catch (error) {
+    status = "failed";
+    exitCode = exitCode === 0 ? 1 : exitCode;
+    writeArtifactMetadata = {
+      detected: true,
+      applied: false,
+      error: error.message
+    };
+  }
+
+  const logSections = [
+    `command: ${invocation.join(" ")}`,
     `startedAt: ${startedAt}`,
     `completedAt: ${completedAt}`,
     `exitCode: ${exitCode}`,
@@ -168,7 +288,15 @@ function runAgentStudioCommand({ body, repoRoot }) {
     "",
     "stderr:",
     stderr
-  ].join("\n");
+  ];
+
+  if (writeArtifactMetadata) {
+    logSections.push("");
+    logSections.push("writeArtifact:");
+    logSections.push(JSON.stringify(writeArtifactMetadata, null, 2));
+  }
+
+  const logOutput = logSections.join("\n");
 
   fs.writeFileSync(logPath, `${logOutput}\n`, "utf8");
 
@@ -185,6 +313,10 @@ function runAgentStudioCommand({ body, repoRoot }) {
 
   if (typeof body.project === "string" && body.project.trim()) {
     metadata.project = normalizeProjectId(body.project);
+  }
+
+  if (writeArtifactMetadata) {
+    metadata.writeArtifact = writeArtifactMetadata;
   }
 
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
@@ -590,6 +722,132 @@ function saveReviewedTaskDraft(body) {
   };
 }
 
+function extractRunResultPayload(stdout) {
+  if (typeof stdout !== "string" || !stdout.trim()) {
+    return null;
+  }
+
+  const lines = stdout.split(/\r?\n/);
+  const jsonStartIndex = lines.findIndex((line) => line.trim().startsWith("{"));
+
+  if (jsonStartIndex === -1) {
+    return null;
+  }
+
+  const jsonText = lines.slice(jsonStartIndex).join("\n").trim();
+
+  try {
+    return JSON.parse(jsonText);
+  } catch (error) {
+    return null;
+  }
+}
+
+function loadWriteArtifactFromRunPayload({ repoRoot, runPayload }) {
+  const writeArtifactPath = runPayload?.executed_agent?.write_artifact;
+
+  if (typeof writeArtifactPath !== "string" || !writeArtifactPath.trim()) {
+    return null;
+  }
+
+  const absolutePath = path.resolve(repoRoot, writeArtifactPath);
+
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`Structured write artifact not found: ${writeArtifactPath}`);
+  }
+
+  let artifact;
+  try {
+    artifact = JSON.parse(fs.readFileSync(absolutePath, "utf8"));
+  } catch (error) {
+    throw new Error(`Structured write artifact JSON is invalid: ${error.message}`);
+  }
+
+  validateStructuredWriteArtifactShape(artifact);
+
+  return {
+    relativePath: path.relative(repoRoot, absolutePath),
+    artifact
+  };
+}
+
+function validateAndResolveArtifactWrites({ repoRoot, projectId, artifact }) {
+  const seenTargets = new Set();
+
+  return artifact.writes.map((write, index) => {
+    const resolvedTarget = resolveSafeProjectWritePath({
+      repoRoot,
+      projectId,
+      requestedPath: write.path
+    });
+
+    if (seenTargets.has(resolvedTarget.relativePath)) {
+      throw new Error(`Structured write artifact entry ${index + 1} targets the same file more than once: ${write.path}`);
+    }
+
+    seenTargets.add(resolvedTarget.relativePath);
+
+    return {
+      ...resolvedTarget,
+      content: write.content
+    };
+  });
+}
+
+function applyProjectWriteArtifact({ repoRoot, projectId, artifact }) {
+  const resolvedWrites = validateAndResolveArtifactWrites({
+    repoRoot,
+    projectId,
+    artifact
+  });
+
+  for (const write of resolvedWrites) {
+    fs.mkdirSync(path.dirname(write.resolvedPath), { recursive: true });
+    fs.writeFileSync(write.resolvedPath, write.content, "utf8");
+  }
+
+  return resolvedWrites.map((write) => write.relativePath);
+}
+
+function maybeApplyDevWriteArtifact({ body, repoRoot, stdout }) {
+  if (body.agent.trim() !== "dev") {
+    return null;
+  }
+
+  if (typeof body.project !== "string" || !body.project.trim()) {
+    return null;
+  }
+
+  const runPayload = extractRunResultPayload(stdout);
+
+  if (!runPayload) {
+    return null;
+  }
+
+  const loadedArtifact = loadWriteArtifactFromRunPayload({
+    repoRoot,
+    runPayload
+  });
+
+  if (!loadedArtifact) {
+    return null;
+  }
+
+  const normalizedProjectId = normalizeProjectId(body.project);
+  const appliedFiles = applyProjectWriteArtifact({
+    repoRoot,
+    projectId: normalizedProjectId,
+    artifact: loadedArtifact.artifact
+  });
+
+  return {
+    detected: true,
+    applied: true,
+    artifact: loadedArtifact.relativePath,
+    files: appliedFiles
+  };
+}
+
 function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } = {}) {
   return http.createServer(async (request, response) => {
     if (!request.url) {
@@ -787,7 +1045,9 @@ module.exports = {
   RUN_ARTIFACT_DIR,
   SUPPORTED_AGENTS,
   buildRunCommand,
+  buildRunAgentArguments,
   createAgentServiceServer,
+  executeRunProcess,
   getServerConfig,
   getRunLogPath,
   getRunMetadataPath,

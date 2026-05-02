@@ -1,9 +1,15 @@
+x-agent-studio-image: &agent_studio_image
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: agentrunner-agent-studio:local
+  working_dir: /workspace
+  environment:
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
 services:
   agent-studio:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    working_dir: /workspace
+    <<: *agent_studio_image
     command: ["node", "server/agent-service.js"]
     environment:
       HOST: 0.0.0.0
@@ -13,3 +19,8 @@ services:
       - "3000:3000"
     volumes:
       - .:/workspace
+
+  agent-studio-project-runner:
+    <<: *agent_studio_image
+    entrypoint: ["node", "./bin/run-agent.js"]
+    command: []

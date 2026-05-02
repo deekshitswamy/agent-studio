@@ -2,6 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const { buildAgentContext } = require("./context-builder");
 const { runToolRouter } = require("./tool-router");
+const {
+  extractStructuredWriteArtifact,
+  validateStructuredWriteArtifactShape
+} = require("./dev-write-artifacts");
 
 const DEFAULT_LLM_MODEL = "gpt-5.5";
 
@@ -228,6 +232,11 @@ function saveMarkdown(filePath, content) {
   fs.writeFileSync(filePath, `${content.trim()}\n`, "utf8");
 }
 
+function saveStructuredWriteArtifact(filePath, artifact) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+}
+
 function buildExecutionPrompt(agentTemplate, contextPackMarkdown, nextPrompt, stateMarkdown) {
   const sections = [
     "# Agent Template",
@@ -317,6 +326,36 @@ function buildMockExecutionContent(result) {
     ...result.assumptions_or_risks.map((item) => `- ${item}`),
     "",
     `Recommended Next Handoff: ${result.recommended_next_handoff}`
+  ].join("\n");
+}
+
+function buildMockDevWriteArtifactContent(taskMarkdown) {
+  const artifact = extractStructuredWriteArtifact(taskMarkdown || "");
+
+  if (!artifact) {
+    return null;
+  }
+
+  return [
+    "Summary: Dev reviewed the selected task and emitted a structured write artifact from the task brief.",
+    "",
+    "Clarified Objective: Apply the explicit project-scoped file writes defined in the selected task artifact.",
+    "",
+    "Acceptance Criteria:",
+    "- Structured write artifact is present.",
+    "- Writes remain project-scoped only.",
+    "",
+    "Risks Or Assumptions:",
+    "- This is a deterministic mock-local-execution for write-artifact verification.",
+    "- The API must validate artifact paths before applying them.",
+    "",
+    "## Write Artifact",
+    "",
+    "```json",
+    JSON.stringify(artifact, null, 2),
+    "```",
+    "",
+    "Recommended Next Handoff: QA"
   ].join("\n");
 }
 
@@ -767,6 +806,14 @@ function buildDirectAgentRequest(agentName, currentUnderstanding, selectedTaskFi
       : agentName === "dev"
         ? "No selected task file was provided. Warn clearly that Dev requires exactly one selected task and do not act on multiple tasks."
         : "No selected task file provided.",
+    agentName === "dev"
+      ? [
+          "If this Dev run needs to create or replace files inside a selected project workspace, include a final `## Write Artifact` section.",
+          "That section must contain exactly one fenced `json` block with this shape:",
+          '{ "version": 1, "writes": [ { "path": "projects/<project-id>/...", "content": "full file content" } ] }',
+          "Only include that section for explicit full-file create/replace writes. Do not describe writes only in prose."
+        ].join(" ")
+      : "Do not invent structured write artifacts unless your role prompt explicitly requires them.",
     "Return only the structured result expected by the agent prompt."
   ].join("\n");
 }
@@ -854,6 +901,7 @@ async function executeNextAgent({
 
   let executionSummary;
   let markdownOutput;
+  let writeArtifact = null;
 
   if (executionMode === "llm") {
     const llmResponse = await callOpenAiForAgentExecution({
@@ -880,6 +928,9 @@ async function executeNextAgent({
       model: DEFAULT_LLM_MODEL,
       content: responseText
     });
+    if (nextAgent === "dev") {
+      writeArtifact = extractStructuredWriteArtifact(responseText);
+    }
 
     executionSummary = {
       timestamp,
@@ -903,13 +954,20 @@ async function executeNextAgent({
       scopeCheck
     });
 
+    const mockContent =
+      nextAgent === "dev" ? buildMockDevWriteArtifactContent(taskMarkdown) : null;
+
     markdownOutput = buildExecutionMarkdown({
       timestamp,
       agentName: nextAgent,
       mode: "mock-local-execution",
       promptFile: promptFileRelative,
-      content: buildMockExecutionContent(executionResult)
+      content: mockContent || buildMockExecutionContent(executionResult)
     });
+
+    if (nextAgent === "dev" && taskMarkdown) {
+      writeArtifact = extractStructuredWriteArtifact(taskMarkdown);
+    }
 
     executionSummary = {
       timestamp,
@@ -935,6 +993,20 @@ async function executeNextAgent({
 
   saveMarkdown(markdownPath, markdownOutput);
 
+  let writeArtifactRelativePath = null;
+
+  if (writeArtifact) {
+    validateStructuredWriteArtifactShape(writeArtifact);
+    const writeArtifactPath = buildScopedLogFilePath(
+      repoRoot,
+      contextPackPath,
+      `${slugifyAgentName(nextAgent)}-writes`,
+      timestamp
+    );
+    saveStructuredWriteArtifact(writeArtifactPath, writeArtifact);
+    writeArtifactRelativePath = path.relative(repoRoot, writeArtifactPath);
+  }
+
   const qualityCheck = buildQualityCheck({
     outputMarkdown: markdownOutput,
     currentUnderstanding
@@ -944,6 +1016,7 @@ async function executeNextAgent({
     ...executionSummary,
     quality_check: qualityCheck,
     output_markdown: markdownOutput,
+    write_artifact: writeArtifactRelativePath,
     saved_to: path.relative(repoRoot, markdownPath)
   };
 }
@@ -1007,6 +1080,7 @@ async function runDirectAgent({
     context_files: agentContextFiles,
     tool_audit: toolAudit,
     executed_agent_log: executionPayload.saved_to,
+    write_artifact: executionPayload.write_artifact || null,
     quality_check: executionPayload.quality_check,
     executed_agent: {
       timestamp: executionPayload.timestamp,
@@ -1014,6 +1088,7 @@ async function runDirectAgent({
       mode: executionPayload.mode,
       prompt_file: executionPayload.prompt_file,
       saved_to: executionPayload.saved_to,
+      write_artifact: executionPayload.write_artifact || null,
       quality_check: executionPayload.quality_check,
       model: executionPayload.model || null
     }
