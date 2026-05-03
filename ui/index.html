@@ -422,6 +422,136 @@
         gap: 8px;
       }
 
+      .project-file-group {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fcfaf4;
+      }
+
+      .project-file-group + .project-file-group {
+        margin-top: 12px;
+      }
+
+      .project-file-group-label {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .project-file-group-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .app-preview-callout {
+        display: grid;
+        gap: 8px;
+        margin: 14px 0 16px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #fcfaf4;
+      }
+
+      .app-preview-callout[hidden] {
+        display: none;
+      }
+
+      .app-preview-label {
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      .app-preview-path {
+        color: var(--ink);
+        font-size: 0.92rem;
+        line-height: 1.45;
+        word-break: break-word;
+      }
+
+      .readme-preview {
+        margin: 0;
+        padding: 16px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: #fcfaf4;
+        color: var(--ink);
+      }
+
+      .readme-preview[hidden] {
+        display: none;
+      }
+
+      .readme-preview h1,
+      .readme-preview h2,
+      .readme-preview h3 {
+        margin: 0 0 10px;
+      }
+
+      .readme-preview h1 {
+        font-size: 1.35rem;
+      }
+
+      .readme-preview h2 {
+        margin-top: 18px;
+        font-size: 1.05rem;
+      }
+
+      .readme-preview h3 {
+        margin-top: 14px;
+        font-size: 0.96rem;
+      }
+
+      .readme-preview p {
+        margin: 0 0 10px;
+        line-height: 1.6;
+      }
+
+      .readme-preview ul {
+        margin: 0 0 12px 20px;
+        padding: 0;
+        line-height: 1.6;
+      }
+
+      .readme-preview code {
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: rgba(14, 107, 92, 0.08);
+        color: var(--accent-strong);
+        font-size: 0.92em;
+      }
+
+      .history-list {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--ink);
+      }
+
+      .history-list li + li {
+        margin-top: 12px;
+      }
+
+      .history-item {
+        display: grid;
+        gap: 8px;
+      }
+
+      .history-meta {
+        display: grid;
+        gap: 4px;
+      }
+
+      .history-summary {
+        color: var(--muted);
+        font-size: 0.88rem;
+      }
+
       .project-file-actions {
         display: flex;
         flex-wrap: wrap;
@@ -441,6 +571,21 @@
 
       .preview-link:hover {
         background: #e6ddcb;
+      }
+
+      .history-action {
+        border: none;
+        cursor: pointer;
+      }
+
+      .task-status-badge[data-status="completed"] {
+        background: #e4f4ec;
+        color: #205545;
+      }
+
+      .task-status-badge[data-status="failed"] {
+        background: #fff0ee;
+        color: #8b3a2d;
       }
 
       .source-label {
@@ -753,6 +898,28 @@
 
           <section class="panel">
             <div class="panel-header">
+              <p class="eyebrow">Project Overview</p>
+              <h2>README Summary</h2>
+              <p>Shows the selected project README from <code>projects/&lt;project-id&gt;/README.md</code>.</p>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="secondary" id="refresh-project-readme-button" type="button">
+                  Refresh Project Overview
+                </button>
+              </div>
+              <p class="status small" id="project-readme-status">
+                Select a project to inspect its README summary.
+              </p>
+              <div class="readme-preview" id="project-readme-preview" hidden></div>
+              <p class="placeholder small" id="project-readme-empty">
+                Project overview will appear here after the selected project has a README.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
               <p class="eyebrow">Project Files</p>
               <h2>Created Files</h2>
               <p>Lists visible files under the selected <code>projects/&lt;project-id&gt;/</code> workspace.</p>
@@ -766,9 +933,46 @@
               <p class="status small" id="project-files-status">
                 Select a project to inspect project-scoped files.
               </p>
+              <div class="app-preview-callout" id="app-preview-callout" hidden>
+                <div class="app-preview-label">Suggested App Preview</div>
+                <div class="app-preview-path" id="app-preview-path"></div>
+                <div class="project-file-actions">
+                  <a
+                    class="preview-link"
+                    id="open-app-preview-link"
+                    href="#"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open App Preview
+                  </a>
+                </div>
+              </div>
               <ul class="project-file-list" id="project-files-list"></ul>
               <p class="placeholder small" id="project-files-empty">
                 Project files will appear here after you select a project and create files inside that workspace.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Project History</p>
+              <h2>Recent Runs</h2>
+              <p>Shows recent project-scoped run metadata from <code>projects/&lt;project-id&gt;/.local/runs/</code>.</p>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="secondary" id="refresh-project-history-button" type="button">
+                  Refresh Project History
+                </button>
+              </div>
+              <p class="status small" id="project-history-status">
+                Select a project to inspect recent project runs.
+              </p>
+              <ul class="history-list" id="project-history-list"></ul>
+              <p class="placeholder small" id="project-history-empty">
+                Project history will appear here after project-scoped runs are created.
               </p>
             </div>
           </section>
@@ -812,10 +1016,21 @@
       const taskDraftsStatus = document.querySelector("#task-drafts-status");
       const taskDraftsList = document.querySelector("#task-drafts-list");
       const taskDraftsEmpty = document.querySelector("#task-drafts-empty");
+      const refreshProjectReadmeButton = document.querySelector("#refresh-project-readme-button");
+      const projectReadmeStatus = document.querySelector("#project-readme-status");
+      const projectReadmePreview = document.querySelector("#project-readme-preview");
+      const projectReadmeEmpty = document.querySelector("#project-readme-empty");
       const refreshProjectFilesButton = document.querySelector("#refresh-project-files-button");
       const projectFilesStatus = document.querySelector("#project-files-status");
+      const appPreviewCallout = document.querySelector("#app-preview-callout");
+      const appPreviewPath = document.querySelector("#app-preview-path");
+      const openAppPreviewLink = document.querySelector("#open-app-preview-link");
       const projectFilesList = document.querySelector("#project-files-list");
       const projectFilesEmpty = document.querySelector("#project-files-empty");
+      const refreshProjectHistoryButton = document.querySelector("#refresh-project-history-button");
+      const projectHistoryStatus = document.querySelector("#project-history-status");
+      const projectHistoryList = document.querySelector("#project-history-list");
+      const projectHistoryEmpty = document.querySelector("#project-history-empty");
       const workflowHint = document.querySelector("#workflow-hint");
       const CONTEXT_PACK_STORAGE_KEY = "agent-studio:last-context-pack";
       const PROJECT_ID_STORAGE_KEY = "agent-studio:last-project-id";
@@ -825,8 +1040,10 @@
         pendingTasksCount: 0,
         draftCount: 0,
         latestLogId: "",
+        projectReadmeContent: "",
         savedTasks: [],
         projectFiles: [],
+        projectHistory: [],
         latestCompletedDevTaskPath: "",
         taskStatuses: {}
       };
@@ -957,10 +1174,124 @@
       function getPreferredPreviewFile() {
         const files = Array.isArray(workflowState.projectFiles) ? workflowState.projectFiles : [];
         return (
+          files.find((file) => file.isHtml && file.relativePath === "app/index.html") ||
           files.find((file) => file.isHtml && file.relativePath === "app/preview.html") ||
           files.find((file) => file.isHtml) ||
           null
         );
+      }
+
+      function renderPreferredPreviewCallout() {
+        const previewFile = getPreferredPreviewFile();
+
+        if (!previewFile || !previewFile.relativePath) {
+          appPreviewCallout.hidden = true;
+          appPreviewPath.textContent = "";
+          openAppPreviewLink.href = "#";
+          return;
+        }
+
+        appPreviewPath.textContent = previewFile.path || previewFile.relativePath;
+        openAppPreviewLink.href = buildProjectFileUrl(previewFile.relativePath);
+        appPreviewCallout.hidden = false;
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function renderInlineMarkdown(text) {
+        return escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+      }
+
+      function markdownToHtml(markdown) {
+        const lines = String(markdown || "").split(/\r?\n/);
+        const html = [];
+        let listItems = [];
+        let paragraph = [];
+
+        function flushParagraph() {
+          if (!paragraph.length) {
+            return;
+          }
+
+          html.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+          paragraph = [];
+        }
+
+        function flushList() {
+          if (!listItems.length) {
+            return;
+          }
+
+          html.push(
+            `<ul>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`
+          );
+          listItems = [];
+        }
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+
+          if (!line) {
+            flushParagraph();
+            flushList();
+            continue;
+          }
+
+          if (line.startsWith("# ")) {
+            flushParagraph();
+            flushList();
+            html.push(`<h1>${renderInlineMarkdown(line.slice(2).trim())}</h1>`);
+            continue;
+          }
+
+          if (line.startsWith("## ")) {
+            flushParagraph();
+            flushList();
+            html.push(`<h2>${renderInlineMarkdown(line.slice(3).trim())}</h2>`);
+            continue;
+          }
+
+          if (line.startsWith("### ")) {
+            flushParagraph();
+            flushList();
+            html.push(`<h3>${renderInlineMarkdown(line.slice(4).trim())}</h3>`);
+            continue;
+          }
+
+          if (line.startsWith("- ")) {
+            flushParagraph();
+            listItems.push(line.slice(2).trim());
+            continue;
+          }
+
+          paragraph.push(line);
+        }
+
+        flushParagraph();
+        flushList();
+        return html.join("");
+      }
+
+      function renderProjectReadme(markdown) {
+        workflowState.projectReadmeContent = typeof markdown === "string" ? markdown : "";
+
+        if (!workflowState.projectReadmeContent.trim()) {
+          projectReadmePreview.hidden = true;
+          projectReadmePreview.innerHTML = "";
+          projectReadmeEmpty.hidden = false;
+          return;
+        }
+
+        projectReadmePreview.innerHTML = markdownToHtml(workflowState.projectReadmeContent);
+        projectReadmePreview.hidden = false;
+        projectReadmeEmpty.hidden = true;
       }
 
       async function fetchProjectFileContents(relativePath) {
@@ -1284,6 +1615,7 @@
 
           if (requestBody.project) {
             await loadProjectFiles();
+            await loadProjectHistory();
           }
 
           if (payload && typeof payload === "object" && typeof payload.id === "string") {
@@ -1349,12 +1681,31 @@
         projectFilesStatus.dataset.tone = tone;
       }
 
+      function setProjectReadmeStatus(message, tone = "") {
+        projectReadmeStatus.textContent = message;
+        projectReadmeStatus.dataset.tone = tone;
+      }
+
+      function setProjectHistoryStatus(message, tone = "") {
+        projectHistoryStatus.textContent = message;
+        projectHistoryStatus.dataset.tone = tone;
+      }
+
       function slugifyTaskId(value) {
         return value
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "")
           .slice(0, 48);
+      }
+
+      function formatHistoryTimestamp(value) {
+        if (!value) {
+          return "n/a";
+        }
+
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
       }
 
       function extractEmbeddedTaskPlannerMarkdown(sourceText) {
@@ -1694,6 +2045,7 @@
       function renderProjectFiles(files) {
         projectFilesList.innerHTML = "";
         workflowState.projectFiles = Array.isArray(files) ? files : [];
+        renderPreferredPreviewCallout();
 
         if (!Array.isArray(files) || files.length === 0) {
           projectFilesEmpty.hidden = false;
@@ -1701,40 +2053,200 @@
         }
 
         projectFilesEmpty.hidden = true;
+        const groupedFiles = new Map();
 
         files.forEach((file) => {
+          const relativePath = file.relativePath || "";
+          const directoryLabel = relativePath.includes("/")
+            ? relativePath.split("/").slice(0, -1).join("/")
+            : "(project root)";
+
+          if (!groupedFiles.has(directoryLabel)) {
+            groupedFiles.set(directoryLabel, []);
+          }
+
+          groupedFiles.get(directoryLabel).push(file);
+        });
+
+        Array.from(groupedFiles.entries())
+          .sort(([left], [right]) => left.localeCompare(right))
+          .forEach(([directoryLabel, directoryFiles]) => {
+            const groupItem = document.createElement("li");
+            const groupWrapper = document.createElement("div");
+            const groupLabel = document.createElement("div");
+            const groupList = document.createElement("div");
+
+            groupWrapper.className = "project-file-group";
+            groupLabel.className = "project-file-group-label";
+            groupList.className = "project-file-group-list";
+            groupLabel.textContent = directoryLabel;
+
+            directoryFiles.forEach((file) => {
+              const wrapper = document.createElement("div");
+              const name = document.createElement("div");
+              const pathLabel = document.createElement("div");
+              const actions = document.createElement("div");
+
+              wrapper.className = "project-file-item";
+              name.textContent = file.name || "(unnamed file)";
+              pathLabel.className = "task-path";
+              pathLabel.textContent = file.path || file.relativePath || "";
+              actions.className = "project-file-actions";
+
+              if (file.isHtml && file.relativePath) {
+                const previewLink = document.createElement("a");
+                previewLink.className = "preview-link";
+                previewLink.href = buildProjectFileUrl(file.relativePath);
+                previewLink.target = "_blank";
+                previewLink.rel = "noopener noreferrer";
+                previewLink.textContent = "Open Preview";
+                actions.appendChild(previewLink);
+              }
+
+              wrapper.appendChild(name);
+              wrapper.appendChild(pathLabel);
+
+              if (actions.children.length > 0) {
+                wrapper.appendChild(actions);
+              }
+
+              groupList.appendChild(wrapper);
+            });
+
+            groupWrapper.appendChild(groupLabel);
+            groupWrapper.appendChild(groupList);
+            groupItem.appendChild(groupWrapper);
+            projectFilesList.appendChild(groupItem);
+          });
+      }
+
+      async function fetchLogById(requestedId) {
+        const normalizedId = normalizeLogLookupId(requestedId);
+
+        if (!normalizedId) {
+          setLogStatus("A log id is required.", "error");
+          setLogOutput("Provide a log id before fetching logs.");
+          logIdInput.focus();
+          return;
+        }
+
+        fetchLogsButton.disabled = true;
+        setLogStatus("Fetching log content...");
+        setLogOutput("Loading log content...");
+
+        try {
+          const response = await fetch(
+            appendProjectToUrl(
+              `${API_BASE}/logs/${encodeURIComponent(normalizedId)}`,
+              getSelectedProjectId()
+            )
+          );
+          const rawText = await response.text();
+
+          if (!response.ok) {
+            let message = "Failed to fetch logs.";
+
+            try {
+              const payload = JSON.parse(rawText);
+              message = payload.error || message;
+            } catch (error) {
+              message = rawText || message;
+            }
+
+            throw new Error(message);
+          }
+
+          logIdInput.value = normalizedId;
+          setLogStatus("Log fetched successfully.", "success");
+          setLogOutput(rawText);
+          workflowState.latestLogId = "";
+          updateWorkflowHint();
+        } catch (error) {
+          setLogStatus("Log fetch failed.", "error");
+          setLogOutput(error.message);
+        } finally {
+          fetchLogsButton.disabled = false;
+        }
+      }
+
+      function renderProjectHistory(runs) {
+        projectHistoryList.innerHTML = "";
+        workflowState.projectHistory = Array.isArray(runs) ? runs : [];
+
+        if (!Array.isArray(runs) || runs.length === 0) {
+          projectHistoryEmpty.hidden = false;
+          return;
+        }
+
+        projectHistoryEmpty.hidden = true;
+        const previewFile = getPreferredPreviewFile();
+        const previewHref = previewFile ? buildProjectFileUrl(previewFile.relativePath) : "";
+
+        runs.forEach((run) => {
           const item = document.createElement("li");
           const wrapper = document.createElement("div");
+          const header = document.createElement("div");
           const name = document.createElement("div");
-          const pathLabel = document.createElement("div");
+          const statusBadge = document.createElement("span");
+          const meta = document.createElement("div");
+          const logLine = document.createElement("div");
+          const timingLine = document.createElement("div");
+          const contextLine = document.createElement("div");
+          const taskLine = document.createElement("div");
           const actions = document.createElement("div");
+          const viewLogButton = document.createElement("button");
 
-          item.className = "project-file-item";
-          wrapper.className = "project-file-item";
-          name.textContent = file.name || "(unnamed file)";
-          pathLabel.className = "task-path";
-          pathLabel.textContent = file.path || file.relativePath || "";
+          item.className = "history-item";
+          wrapper.className = "history-item";
+          header.className = "task-item-header";
+          meta.className = "history-meta";
+          name.textContent = run.agent || "unknown";
+          statusBadge.className = "task-status-badge";
+          statusBadge.dataset.status = run.status || "unknown";
+          statusBadge.textContent = run.status || "unknown";
+          logLine.className = "history-summary";
+          logLine.textContent = `Log: ${run.logId || "n/a"}`;
+          timingLine.className = "history-summary";
+          timingLine.textContent = `Started: ${formatHistoryTimestamp(
+            run.startedAt
+          )} | Completed: ${formatHistoryTimestamp(run.completedAt)}`;
+          contextLine.className = "history-summary";
+          contextLine.textContent = `Context: ${run.contextPack || "n/a"}`;
+          taskLine.className = "history-summary";
+          taskLine.textContent = run.task ? `Task: ${run.task}` : "";
           actions.className = "project-file-actions";
+          viewLogButton.className = "preview-link history-action";
+          viewLogButton.type = "button";
+          viewLogButton.textContent = "View Log";
+          viewLogButton.addEventListener("click", async () => {
+            await fetchLogById(run.logId || run.id || "");
+          });
 
-          if (file.isHtml && file.relativePath) {
+          header.appendChild(name);
+          header.appendChild(statusBadge);
+          meta.appendChild(logLine);
+          meta.appendChild(timingLine);
+          meta.appendChild(contextLine);
+          if (run.task) {
+            meta.appendChild(taskLine);
+          }
+          actions.appendChild(viewLogButton);
+
+          if (previewHref) {
             const previewLink = document.createElement("a");
             previewLink.className = "preview-link";
-            previewLink.href = buildProjectFileUrl(file.relativePath);
+            previewLink.href = previewHref;
             previewLink.target = "_blank";
             previewLink.rel = "noopener noreferrer";
             previewLink.textContent = "Open Preview";
             actions.appendChild(previewLink);
           }
 
-          wrapper.appendChild(name);
-          wrapper.appendChild(pathLabel);
-
-          if (actions.children.length > 0) {
-            wrapper.appendChild(actions);
-          }
-
+          wrapper.appendChild(header);
+          wrapper.appendChild(meta);
+          wrapper.appendChild(actions);
           item.appendChild(wrapper);
-          projectFilesList.appendChild(item);
+          projectHistoryList.appendChild(item);
         });
       }
 
@@ -1783,6 +2295,91 @@
           setProjectFilesStatus(error.message, "error");
         } finally {
           refreshProjectFilesButton.disabled = false;
+        }
+      }
+
+      async function loadProjectReadme() {
+        const projectId = getSelectedProjectId();
+        refreshProjectReadmeButton.disabled = true;
+
+        if (!projectId) {
+          renderProjectReadme("");
+          setProjectReadmeStatus("Select a project to inspect its README summary.");
+          refreshProjectReadmeButton.disabled = false;
+          return;
+        }
+
+        setProjectReadmeStatus(`Loading project overview for ${projectId}...`);
+
+        try {
+          const readmeUrl = new URL(`${API_BASE || window.location.origin}/project-readme`);
+          readmeUrl.searchParams.set("project", projectId);
+          const response = await fetch(
+            API_BASE ? `${readmeUrl.pathname}${readmeUrl.search}` : readmeUrl.toString()
+          );
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to load project README.");
+          }
+
+          renderProjectReadme(payload.content || "");
+          setProjectReadmeStatus(`Loaded project overview for ${projectId}.`, "success");
+        } catch (error) {
+          renderProjectReadme("");
+          projectReadmeEmpty.textContent =
+            "Project overview could not be loaded from the local API.";
+          setProjectReadmeStatus(error.message, "error");
+        } finally {
+          refreshProjectReadmeButton.disabled = false;
+        }
+      }
+
+      async function loadProjectHistory() {
+        const projectId = getSelectedProjectId();
+        refreshProjectHistoryButton.disabled = true;
+
+        if (!projectId) {
+          renderProjectHistory([]);
+          projectHistoryEmpty.hidden = false;
+          setProjectHistoryStatus("Select a project to inspect recent project runs.");
+          refreshProjectHistoryButton.disabled = false;
+          return;
+        }
+
+        setProjectHistoryStatus(`Loading project history for ${projectId}...`);
+
+        try {
+          const historyUrl = new URL(`${API_BASE || window.location.origin}/project-history`);
+          historyUrl.searchParams.set("project", projectId);
+          const response = await fetch(
+            API_BASE ? `${historyUrl.pathname}${historyUrl.search}` : historyUrl.toString()
+          );
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to load project history.");
+          }
+
+          const runs = Array.isArray(payload.runs) ? payload.runs : [];
+          renderProjectHistory(runs);
+
+          if (runs.length === 0) {
+            setProjectHistoryStatus(`No project history found for ${projectId}.`);
+          } else {
+            setProjectHistoryStatus(
+              `Loaded ${runs.length} recent project run${runs.length === 1 ? "" : "s"} for ${projectId}.`,
+              "success"
+            );
+          }
+        } catch (error) {
+          renderProjectHistory([]);
+          projectHistoryEmpty.hidden = false;
+          projectHistoryEmpty.textContent =
+            "Project history could not be loaded from the local API.";
+          setProjectHistoryStatus(error.message, "error");
+        } finally {
+          refreshProjectHistoryButton.disabled = false;
         }
       }
 
@@ -1922,7 +2519,9 @@
 
       projectIdInput.addEventListener("change", () => {
         loadSavedTasks();
+        loadProjectReadme();
         loadProjectFiles();
+        loadProjectHistory();
       });
 
       runIdeaButton.addEventListener("click", async () => {
@@ -2065,59 +2664,23 @@
       });
 
       fetchLogsButton.addEventListener("click", async () => {
-        const requestedId = normalizeLogLookupId(logIdInput.value);
-
-        if (!requestedId) {
-          setLogStatus("A log id is required.", "error");
-          setLogOutput("Provide a log id before fetching logs.");
-          logIdInput.focus();
-          return;
-        }
-
-        fetchLogsButton.disabled = true;
-        setLogStatus("Fetching log content...");
-        setLogOutput("Loading log content...");
-
-        try {
-          const response = await fetch(
-            appendProjectToUrl(
-              `${API_BASE}/logs/${encodeURIComponent(requestedId)}`,
-              getSelectedProjectId()
-            )
-          );
-          const rawText = await response.text();
-
-          if (!response.ok) {
-            let message = "Failed to fetch logs.";
-
-            try {
-              const payload = JSON.parse(rawText);
-              message = payload.error || message;
-            } catch (error) {
-              message = rawText || message;
-            }
-
-            throw new Error(message);
-          }
-
-          setLogStatus("Log fetched successfully.", "success");
-          setLogOutput(rawText);
-          workflowState.latestLogId = "";
-          updateWorkflowHint();
-        } catch (error) {
-          setLogStatus("Log fetch failed.", "error");
-          setLogOutput(error.message);
-        } finally {
-          fetchLogsButton.disabled = false;
-        }
+        await fetchLogById(logIdInput.value);
       });
 
       refreshTasksButton.addEventListener("click", () => {
         loadSavedTasks();
       });
 
+      refreshProjectReadmeButton.addEventListener("click", () => {
+        loadProjectReadme();
+      });
+
       refreshProjectFilesButton.addEventListener("click", () => {
         loadProjectFiles();
+      });
+
+      refreshProjectHistoryButton.addEventListener("click", () => {
+        loadProjectHistory();
       });
 
       restoreContextPack();
@@ -2126,7 +2689,9 @@
       updateWorkflowHint();
       loadAgents();
       loadSavedTasks();
+      loadProjectReadme();
       loadProjectFiles();
+      loadProjectHistory();
     </script>
   </body>
 </html>

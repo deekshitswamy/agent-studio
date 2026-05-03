@@ -75,6 +75,12 @@ Assistant/Orchestrator Identity: DIVYA
   - structured Dev write artifacts
   - safe project-scoped file application after Dev runs
   - no write application for non-project runs
+- `v20`:
+  - project history in the UI
+  - multi-file prototype generation support
+  - preferred app preview detection
+  - project README generation
+  - project overview panel
 
 ## Current Direct-Agent Contract
 
@@ -115,6 +121,7 @@ Assistant/Orchestrator Identity: DIVYA
 - `docker-compose.yml` now defines both the local API/UI service and the short-lived project runner service.
 - `ui/index.html` now supports both direct runs and an idea-to-drafts PM -> Task Planner flow.
 - project-scoped Dev runs can now emit structured write artifacts that the API validates and applies inside `projects/<project-id>/` only.
+- the UI now also supports project overview, project history, preferred app preview routing, and grouped project file visibility for local workspaces.
 - `src/tool-router.js` gates local tool usage by role.
 - `src/context-builder.js` keeps agent context narrow and deterministic.
 - `bin/mcp-server.js` and `src/mcp/` hold the local read-only MCP prototype.
@@ -163,6 +170,7 @@ If MCP work continues, the safest next milestone is a small, explicit operator/w
    - [releases/agent-studio-v17-project-runner.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v17-project-runner.md)
    - [releases/agent-studio-v18-run-idea.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v18-run-idea.md)
    - [releases/agent-studio-v19-dev-write-artifacts.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v19-dev-write-artifacts.md)
+   - [releases/agent-studio-v20-project-workspace-overview.md](/Users/deekshitswamy/Documents/GitHub/Agent%20Runner/releases/agent-studio-v20-project-workspace-overview.md)
 6. Choose one context pack or one selected task before running anything.
 7. Keep scope bounded to that single execution.
 

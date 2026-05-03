@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Landing Page Generator</title>
+  <link rel="stylesheet" href="/project-file?project=landing-page-generator&path=app/styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="editor-panel" aria-labelledby="editor-title">
+      <p class="eyebrow">Local prototype</p>
+      <h1 id="editor-title">Landing Page Generator</h1>
+      <p class="intro">Enter a product name, tagline, and a few features to generate a simple landing page preview instantly.</p>
+
+      <form id="generator-form" class="generator-form">
+        <label for="product-name">Product name</label>
+        <input id="product-name" name="productName" type="text" value="BrightDesk" maxlength="60" placeholder="Example: BrightDesk" />
+
+        <label for="tagline">Tagline</label>
+        <input id="tagline" name="tagline" type="text" value="Plan better workdays in minutes." maxlength="120" placeholder="Example: Plan better workdays in minutes." />
+
+        <fieldset>
+          <legend>Features</legend>
+          <p class="hint">Add 3 to 5 short feature statements.</p>
+
+          <label for="feature-1">Feature 1</label>
+          <input id="feature-1" class="feature-input" type="text" value="Smart daily planning" maxlength="90" />
+
+          <label for="feature-2">Feature 2</label>
+          <input id="feature-2" class="feature-input" type="text" value="Simple team visibility" maxlength="90" />
+
+          <label for="feature-3">Feature 3</label>
+          <input id="feature-3" class="feature-input" type="text" value="Progress tracking without clutter" maxlength="90" />
+
+          <label for="feature-4">Feature 4</label>
+          <input id="feature-4" class="feature-input" type="text" value="Helpful reminders" maxlength="90" />
+
+          <label for="feature-5">Feature 5</label>
+          <input id="feature-5" class="feature-input" type="text" placeholder="Optional feature" maxlength="90" />
+        </fieldset>
+      </form>
+    </section>
+
+    <section class="preview-panel" aria-labelledby="preview-title">
+      <div class="preview-toolbar">
+        <div>
+          <p class="eyebrow">Live preview</p>
+          <h2 id="preview-title">Generated landing page</h2>
+        </div>
+        <span class="status-pill">Auto-updating</span>
+      </div>
+
+      <article class="landing-preview" aria-live="polite">
+        <nav class="preview-nav">
+          <strong id="preview-brand">BrightDesk</strong>
+          <a href="#preview-features">Features</a>
+        </nav>
+
+        <section class="preview-hero">
+          <p class="preview-kicker">New product launch</p>
+          <h3 id="preview-name">BrightDesk</h3>
+          <p id="preview-tagline">Plan better workdays in minutes.</p>
+          <div class="preview-actions">
+            <a href="#" class="primary-action">Get started</a>
+            <a href="#preview-features" class="secondary-action">See features</a>
+          </div>
+        </section>
+
+        <section id="preview-features" class="preview-features">
+          <p class="section-label">Why teams use it</p>
+          <div id="preview-feature-list" class="feature-grid"></div>
+        </section>
+      </article>
+    </section>
+  </main>
+
+  <script src="/project-file?project=landing-page-generator&path=app/script.js"></script>
+</body>
+</html>

@@ -811,6 +811,8 @@ function buildDirectAgentRequest(agentName, currentUnderstanding, selectedTaskFi
           "If this Dev run needs to create or replace files inside a selected project workspace, include a final `## Write Artifact` section.",
           "That section must contain exactly one fenced `json` block with this shape:",
           '{ "version": 1, "writes": [ { "path": "projects/<project-id>/...", "content": "full file content" } ] }',
+          "Use one or more `writes` entries when the selected task requires multiple project files.",
+          "Each entry must contain the full replacement content for exactly one target file.",
           "Only include that section for explicit full-file create/replace writes. Do not describe writes only in prose."
         ].join(" ")
       : "Do not invent structured write artifacts unless your role prompt explicitly requires them.",

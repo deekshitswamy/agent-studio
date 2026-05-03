@@ -16,6 +16,9 @@ const RUN_ARTIFACT_DIR = path.resolve(__dirname, "..", ".local", "runs");
 const UI_INDEX_PATH = path.resolve(__dirname, "..", "ui", "index.html");
 const TASKS_DIR_PATH = path.resolve(__dirname, "..", "tasks");
 const PROJECTS_DIR_PATH = path.resolve(__dirname, "..", "projects");
+const PROJECT_RUNNER_HOST_REQUIRED_ERROR =
+  "Project-scoped runs require the API server to run on the host. The Dockerized API container supports UI and global runs, but it cannot launch the project runner.";
+const HIDDEN_PROJECT_SEGMENTS = new Set([".local"]);
 
 function getServerConfig(env = process.env) {
   const rawPort = env.PORT;
@@ -196,8 +199,30 @@ function buildProjectRunnerCommand({ body, repoRoot, projectId }) {
   };
 }
 
+function assertProjectRunnerExecutionAvailable() {
+  if (String(process.env.AGENT_STUDIO_CONTAINERIZED || "").toLowerCase() === "true") {
+    const error = new Error(PROJECT_RUNNER_HOST_REQUIRED_ERROR);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const dockerCheck = spawnSync("docker", ["compose", "version"], {
+    encoding: "utf8"
+  });
+
+  if (dockerCheck.error || dockerCheck.status !== 0) {
+    const error = new Error(
+      "Project-scoped runs require Docker Compose to be available on the host API machine."
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
 function executeRunProcess({ body, repoRoot }) {
   if (typeof body.project === "string" && body.project.trim()) {
+    assertProjectRunnerExecutionAvailable();
+
     const projectCommand = buildProjectRunnerCommand({
       body,
       repoRoot,
@@ -311,6 +336,10 @@ function runAgentStudioCommand({ body, repoRoot }) {
     completedAt
   };
 
+  if (typeof body.task === "string" && body.task.trim()) {
+    metadata.task = body.task.trim();
+  }
+
   if (typeof body.project === "string" && body.project.trim()) {
     metadata.project = normalizeProjectId(body.project);
   }
@@ -320,6 +349,13 @@ function runAgentStudioCommand({ body, repoRoot }) {
   }
 
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+
+  if (typeof body.project === "string" && body.project.trim()) {
+    generateProjectReadme({
+      repoRoot,
+      projectId: body.project
+    });
+  }
 
   return metadata;
 }
@@ -384,6 +420,56 @@ function readRunLog(runId, projectId = "") {
   }
 
   return fs.readFileSync(logPath, "utf8");
+}
+
+function listProjectHistory(projectId) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  const runArtifactDir = getRunArtifactDirectoryForProject(normalizedProjectId);
+
+  if (!fs.existsSync(runArtifactDir)) {
+    return [];
+  }
+
+  const entries = fs.readdirSync(runArtifactDir, { withFileTypes: true });
+  const historyItems = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) {
+      continue;
+    }
+
+    const absolutePath = path.join(runArtifactDir, entry.name);
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(absolutePath, "utf8"));
+      const startedAtMs = Date.parse(parsed.startedAt || parsed.completedAt || 0);
+      const completedAtMs = Date.parse(parsed.completedAt || parsed.startedAt || 0);
+
+      historyItems.push({
+        id: parsed.id || path.basename(entry.name, ".json"),
+        agent: parsed.agent || "unknown",
+        status: parsed.status || "unknown",
+        startedAt: parsed.startedAt || null,
+        completedAt: parsed.completedAt || null,
+        logId: parsed.logId || null,
+        task: parsed.task || null,
+        contextPack: parsed.contextPack || null,
+        project: parsed.project || normalizedProjectId,
+        _sortKey:
+          Number.isFinite(startedAtMs) && startedAtMs > 0
+            ? startedAtMs
+            : Number.isFinite(completedAtMs) && completedAtMs > 0
+              ? completedAtMs
+              : fs.statSync(absolutePath).mtimeMs
+      });
+    } catch (error) {
+      continue;
+    }
+  }
+
+  return historyItems
+    .sort((left, right) => right._sortKey - left._sortKey)
+    .map(({ _sortKey, ...item }) => item);
 }
 
 function extractStdoutFromRunLog(logContent) {
@@ -465,6 +551,353 @@ function getTasksDirectoryForProject(projectId) {
   return {
     rootPath: path.join(PROJECTS_DIR_PATH, normalizedProjectId, "tasks"),
     pathPrefix: `projects/${normalizedProjectId}/tasks/`
+  };
+}
+
+function getProjectRoot(projectId) {
+  return path.join(PROJECTS_DIR_PATH, normalizeProjectId(projectId));
+}
+
+function assertSafeProjectRelativePath(requestedPath) {
+  if (typeof requestedPath !== "string" || !requestedPath.trim()) {
+    const error = new Error("Project file path must be a non-empty relative path.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalizedPath = requestedPath.trim();
+
+  if (path.isAbsolute(normalizedPath)) {
+    const error = new Error(`Absolute project file paths are not allowed: ${normalizedPath}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const segments = normalizedPath.split(/[\\/]+/).filter(Boolean);
+
+  if (segments.includes("..")) {
+    const error = new Error(`Parent-directory traversal is not allowed for project files: ${normalizedPath}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  for (const segment of segments) {
+    if (segment.startsWith(".") || HIDDEN_PROJECT_SEGMENTS.has(segment)) {
+      const error = new Error(`Hidden project paths are not allowed: ${normalizedPath}`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  return normalizedPath;
+}
+
+function resolveSafeProjectFilePath(projectId, requestedPath) {
+  const projectRoot = getProjectRoot(projectId);
+  const relativeProjectPath = assertSafeProjectRelativePath(requestedPath);
+  const resolvedPath = path.resolve(projectRoot, relativeProjectPath);
+  const relativeToProject = path.relative(projectRoot, resolvedPath);
+
+  if (
+    !relativeToProject ||
+    relativeToProject.startsWith("..") ||
+    path.isAbsolute(relativeToProject)
+  ) {
+    const error = new Error(`Resolved project file path is outside the selected project: ${requestedPath}`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    projectRoot,
+    resolvedPath,
+    relativeProjectPath,
+    repoRelativePath: path.relative(path.resolve(__dirname, ".."), resolvedPath)
+  };
+}
+
+function isVisibleProjectEntry(entryName) {
+  return !entryName.startsWith(".") && !HIDDEN_PROJECT_SEGMENTS.has(entryName);
+}
+
+function listProjectFiles(projectId) {
+  const projectRoot = getProjectRoot(projectId);
+  const normalizedProjectId = normalizeProjectId(projectId);
+
+  if (!fs.existsSync(projectRoot)) {
+    return [];
+  }
+
+  const files = [];
+
+  function walkDirectory(currentPath, relativePrefix = "") {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!isVisibleProjectEntry(entry.name)) {
+        continue;
+      }
+
+      const relativePath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+      const absolutePath = path.join(currentPath, entry.name);
+
+      if (entry.isDirectory()) {
+        walkDirectory(absolutePath, relativePath);
+        continue;
+      }
+
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      files.push({
+        name: entry.name,
+        path: `projects/${normalizedProjectId}/${relativePath}`,
+        relativePath,
+        isHtml: entry.name.toLowerCase().endsWith(".html")
+      });
+    }
+  }
+
+  walkDirectory(projectRoot);
+
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function getPreferredProjectPreviewFile(files) {
+  return (
+    files.find((file) => file.isHtml && file.relativePath === "app/index.html") ||
+    files.find((file) => file.isHtml && file.relativePath === "app/preview.html") ||
+    files.find((file) => file.isHtml) ||
+    null
+  );
+}
+
+function formatProjectDisplayName(projectId) {
+  return normalizeProjectId(projectId)
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function escapeMarkdownInline(value) {
+  return String(value || "").replace(/`/g, "\\`");
+}
+
+function extractHtmlTitle(html) {
+  if (typeof html !== "string" || !html.trim()) {
+    return "";
+  }
+
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  if (titleMatch) {
+    return titleMatch[1].trim();
+  }
+
+  const headingMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (!headingMatch) {
+    return "";
+  }
+
+  return headingMatch[1]
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildProjectPreviewUrl(projectId, relativePath, port = DEFAULT_PORT) {
+  return `http://127.0.0.1:${port}/project-file?project=${encodeURIComponent(
+    normalizeProjectId(projectId)
+  )}&path=${encodeURIComponent(relativePath)}`;
+}
+
+function buildProjectReadmeMarkdown({ projectId, projectFiles, projectHistory }) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  const displayName = formatProjectDisplayName(normalizedProjectId);
+  const previewFile = getPreferredProjectPreviewFile(projectFiles);
+  const previewRelativePath = previewFile ? previewFile.relativePath : "";
+  const previewProjectPath = previewFile ? previewFile.path : "Not available yet";
+  const previewUrl = previewFile
+    ? buildProjectPreviewUrl(normalizedProjectId, previewRelativePath)
+    : "";
+  const generatedAppFiles = projectFiles.filter(
+    (file) => file.relativePath.startsWith("app/") && file.relativePath !== "README.md"
+  );
+  const recentRuns = projectHistory.slice(0, 5);
+
+  let prototypeSummary =
+    `This project contains a local-first Agent Studio prototype for ${displayName}.`;
+
+  if (previewFile) {
+    try {
+      const previewContent = fs.readFileSync(
+        resolveSafeProjectFilePath(normalizedProjectId, previewRelativePath).resolvedPath,
+        "utf8"
+      );
+      const previewTitle = extractHtmlTitle(previewContent);
+
+      if (previewTitle) {
+        prototypeSummary = `This project contains a local-first Agent Studio prototype for ${previewTitle}.`;
+      }
+
+      if (generatedAppFiles.some((file) => file.relativePath === "app/script.js")) {
+        prototypeSummary +=
+          " The current app includes editable inputs and live preview behavior driven by in-project JavaScript.";
+      }
+    } catch (error) {
+      // Keep the generic summary when preview parsing is unavailable.
+    }
+  }
+
+  const lines = [
+    `# ${displayName}`,
+    "",
+    "## Project Name",
+    "",
+    `- \`${normalizedProjectId}\``,
+    "",
+    "## What The Prototype Does",
+    "",
+    `- ${prototypeSummary}`,
+    `- Generated project files are kept under \`projects/${normalizedProjectId}/\` and can be previewed through the local Agent Studio API.`,
+    "",
+    "## Main Preview File",
+    "",
+    `- \`${escapeMarkdownInline(previewProjectPath)}\``
+  ];
+
+  if (previewUrl) {
+    lines.push(`- Preview URL: \`${escapeMarkdownInline(previewUrl)}\``);
+  } else {
+    lines.push("- Preview URL: no HTML preview file has been generated yet.");
+  }
+
+  lines.push("", "## Generated Files", "");
+
+  if (generatedAppFiles.length === 0) {
+    lines.push("- No generated app files detected yet.");
+  } else {
+    generatedAppFiles.forEach((file) => {
+      lines.push(`- \`${escapeMarkdownInline(file.path)}\``);
+    });
+  }
+
+  lines.push("", "## How To Open Preview Through Agent Studio", "");
+
+  if (previewUrl) {
+    lines.push("- Start the host API with `node server/agent-service.js`.");
+    lines.push(`- Open \`${escapeMarkdownInline(previewUrl)}\` in your browser.`);
+    lines.push(
+      `- If you use a different port, keep the same route path and replace only the port: \`/project-file?project=${escapeMarkdownInline(
+        normalizedProjectId
+      )}&path=${encodeURIComponent(previewRelativePath)}\`.`
+    );
+  } else {
+    lines.push("- Generate an HTML preview file first, then reopen this README for the preview route.");
+  }
+
+  lines.push("", "## Current Limitations", "");
+  lines.push("- Local-first static prototype only; no deployment pipeline is configured.");
+  lines.push("- No backend persistence, authentication, database, or background jobs.");
+  lines.push("- Project history is file-based and scoped to local run artifacts.");
+
+  lines.push("", "## Next Suggested Improvements", "");
+  lines.push("- Add richer templates, sections, or component variations to the generated landing page.");
+  lines.push("- Persist form inputs or sample content presets for easier iteration.");
+  lines.push("- Expand the preview into a fuller multi-screen prototype or export flow when needed.");
+
+  lines.push("", "## Recent Project Activity", "");
+
+  if (recentRuns.length === 0) {
+    lines.push("- No project-scoped runs recorded yet.");
+  } else {
+    recentRuns.forEach((run) => {
+      const summaryParts = [
+        `agent=\`${escapeMarkdownInline(run.agent || "unknown")}\``,
+        `status=\`${escapeMarkdownInline(run.status || "unknown")}\``
+      ];
+
+      if (run.logId) {
+        summaryParts.push(`log=\`${escapeMarkdownInline(run.logId)}\``);
+      }
+
+      if (run.task) {
+        summaryParts.push(`task=\`${escapeMarkdownInline(run.task)}\``);
+      }
+
+      if (run.completedAt) {
+        summaryParts.push(`completed=\`${escapeMarkdownInline(run.completedAt)}\``);
+      } else if (run.startedAt) {
+        summaryParts.push(`started=\`${escapeMarkdownInline(run.startedAt)}\``);
+      }
+
+      lines.push(`- ${summaryParts.join(" · ")}`);
+    });
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function generateProjectReadme({ repoRoot, projectId }) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  const projectRoot = getProjectRoot(normalizedProjectId);
+
+  fs.mkdirSync(projectRoot, { recursive: true });
+
+  const markdown = buildProjectReadmeMarkdown({
+    projectId: normalizedProjectId,
+    projectFiles: listProjectFiles(normalizedProjectId),
+    projectHistory: listProjectHistory(normalizedProjectId)
+  });
+
+  const readmePath = path.join(projectRoot, "README.md");
+  fs.writeFileSync(readmePath, markdown, "utf8");
+
+  return {
+    project: normalizedProjectId,
+    path: path.relative(repoRoot, readmePath)
+  };
+}
+
+function getProjectFileContentType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+
+  switch (extension) {
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+      return "application/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".md":
+    case ".txt":
+      return "text/plain; charset=utf-8";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function getProjectReadmePath(projectId) {
+  return path.join(getProjectRoot(projectId), "README.md");
+}
+
+function readProjectReadme(projectId, repoRoot) {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  const readmePath = getProjectReadmePath(normalizedProjectId);
+
+  if (!fs.existsSync(readmePath)) {
+    const error = new Error(`Project README not found for: ${normalizedProjectId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    project: normalizedProjectId,
+    path: path.relative(repoRoot, readmePath),
+    content: fs.readFileSync(readmePath, "utf8")
   };
 }
 
@@ -674,11 +1107,20 @@ function buildSavedTaskMarkdown({ taskId, title, body, contextPack }) {
     ]
   ]);
 
+  const writeArtifactLines =
+    draftSections.get("Write Artifact") || draftSections.get("Write Artifact JSON") || null;
+
   const output = [`# Task: ${normalizedTitle}`, ""];
 
   for (const [sectionName, lines] of sectionContent.entries()) {
     output.push(`## ${sectionName}`, "");
     output.push(...lines);
+    output.push("");
+  }
+
+  if (writeArtifactLines && trimSectionLines([...writeArtifactLines]).length > 0) {
+    output.push("## Write Artifact", "");
+    output.push(...writeArtifactLines);
     output.push("");
   }
 
@@ -708,6 +1150,13 @@ function saveReviewedTaskDraft(body) {
     const error = new Error(`Saved task file failed validation: ${validation.errors.join("; ")}`);
     error.statusCode = 500;
     throw error;
+  }
+
+  if (typeof body.project === "string" && body.project.trim()) {
+    generateProjectReadme({
+      repoRoot: path.resolve(__dirname, ".."),
+      projectId: body.project
+    });
   }
 
   return {
@@ -865,7 +1314,19 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
         name: "Agent Studio API",
         status: "ok",
         version: "v7-skeleton",
-        routes: ["/", "/ui", "/health", "/agents", "/tasks", "/runs/:id", "/logs/:id"]
+        routes: [
+          "/",
+          "/ui",
+          "/health",
+          "/agents",
+          "/tasks",
+          "/project-readme",
+          "/project-history",
+          "/project-files",
+          "/project-file",
+          "/runs/:id",
+          "/logs/:id"
+        ]
       });
       return;
     }
@@ -893,6 +1354,121 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
       sendJson(response, 200, {
         agents: SUPPORTED_AGENTS
       });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/project-files") {
+      const projectId = url.searchParams.get("project") || "";
+
+      if (!projectId.trim()) {
+        sendJson(response, 400, {
+          error: "Project id is required for project file listing."
+        });
+        return;
+      }
+
+      try {
+        sendJson(response, 200, {
+          project: normalizeProjectId(projectId),
+          files: listProjectFiles(projectId)
+        });
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
+          error: error.message
+        });
+      }
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/project-readme") {
+      const projectId = url.searchParams.get("project") || "";
+
+      if (!projectId.trim()) {
+        sendJson(response, 400, {
+          error: "Project id is required for project README."
+        });
+        return;
+      }
+
+      try {
+        sendJson(response, 200, readProjectReadme(projectId, repoRoot));
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
+          error: error.message
+        });
+      }
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/project-history") {
+      const projectId = url.searchParams.get("project") || "";
+
+      if (!projectId.trim()) {
+        sendJson(response, 400, {
+          error: "Project id is required for project history."
+        });
+        return;
+      }
+
+      try {
+        sendJson(response, 200, {
+          project: normalizeProjectId(projectId),
+          runs: listProjectHistory(projectId)
+        });
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
+          error: error.message
+        });
+      }
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/project-file") {
+      const projectId = url.searchParams.get("project") || "";
+      const requestedPath = url.searchParams.get("path") || "";
+
+      if (!projectId.trim()) {
+        sendJson(response, 400, {
+          error: "Project id is required for project file access."
+        });
+        return;
+      }
+
+      if (!requestedPath.trim()) {
+        sendJson(response, 400, {
+          error: "Project file path is required."
+        });
+        return;
+      }
+
+      try {
+        const resolvedFile = resolveSafeProjectFilePath(projectId, requestedPath);
+
+        if (!fs.existsSync(resolvedFile.resolvedPath)) {
+          sendJson(response, 404, {
+            error: `Project file not found: ${requestedPath}`
+          });
+          return;
+        }
+
+        const stats = fs.statSync(resolvedFile.resolvedPath);
+
+        if (!stats.isFile()) {
+          sendJson(response, 400, {
+            error: `Only project files can be served: ${requestedPath}`
+          });
+          return;
+        }
+
+        response.writeHead(200, {
+          "Content-Type": getProjectFileContentType(resolvedFile.resolvedPath)
+        });
+        response.end(fs.readFileSync(resolvedFile.resolvedPath));
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
+          error: error.message
+        });
+      }
       return;
     }
 
@@ -1042,12 +1618,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  PROJECT_RUNNER_HOST_REQUIRED_ERROR,
   RUN_ARTIFACT_DIR,
   SUPPORTED_AGENTS,
   buildRunCommand,
   buildRunAgentArguments,
   createAgentServiceServer,
   executeRunProcess,
+  generateProjectReadme,
   getServerConfig,
   getRunLogPath,
   getRunMetadataPath,
