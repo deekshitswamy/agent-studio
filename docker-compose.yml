@@ -12,6 +12,7 @@ services:
     <<: *agent_studio_image
     command: ["node", "server/agent-service.js"]
     environment:
+      AGENT_STUDIO_CONTAINERIZED: "true"
       HOST: 0.0.0.0
       PORT: "3000"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

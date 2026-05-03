@@ -1,4 +1,5 @@
-const WRITE_ARTIFACT_SECTION_NAME = "Write Artifact";
+const WRITE_ARTIFACT_SECTION_NAMES = ["Write Artifact", "Write Artifact JSON"];
+const WRITE_ARTIFACT_SECTION_NAME = WRITE_ARTIFACT_SECTION_NAMES[0];
 
 function extractSectionBody(markdown, sectionName = WRITE_ARTIFACT_SECTION_NAME) {
   if (typeof markdown !== "string" || !markdown.trim()) {
@@ -29,7 +30,15 @@ function extractSectionBody(markdown, sectionName = WRITE_ARTIFACT_SECTION_NAME)
 }
 
 function extractStructuredWriteArtifact(markdown, sectionName = WRITE_ARTIFACT_SECTION_NAME) {
-  const sectionBody = extractSectionBody(markdown, sectionName);
+  const sectionNames = Array.isArray(sectionName) ? sectionName : [sectionName];
+  let sectionBody = null;
+
+  for (const candidate of sectionNames) {
+    sectionBody = extractSectionBody(markdown, candidate);
+    if (sectionBody) {
+      break;
+    }
+  }
 
   if (!sectionBody) {
     return null;
@@ -78,6 +87,7 @@ function validateStructuredWriteArtifactShape(artifact) {
 
 module.exports = {
   WRITE_ARTIFACT_SECTION_NAME,
+  WRITE_ARTIFACT_SECTION_NAMES,
   extractStructuredWriteArtifact,
   validateStructuredWriteArtifactShape
 };

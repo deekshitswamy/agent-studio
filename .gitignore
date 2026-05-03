@@ -2,4 +2,4 @@
 .DS_Store
 logs/*
 .local/*
-projects/agent-studio/.local/runs/*
+projects/*

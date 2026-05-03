@@ -64,6 +64,34 @@ node ./bin/run-agent.js ...
 
 The API service triggers the runner only for project-scoped runs.
 
+## Current Host Requirement
+
+Project-scoped runner execution currently requires the API server to run on the host machine.
+
+In practice:
+
+- host API server:
+  - supports global runs
+  - supports project-scoped runs
+  - can launch `agent-studio-project-runner`
+- Dockerized API server:
+  - supports the local UI
+  - supports global runs
+  - does not support launching the project runner
+
+Reason:
+
+- the Dockerized API container does not have Docker CLI or Docker socket access
+- project-scoped runner launch depends on:
+
+```bash
+docker compose run --rm -T agent-studio-project-runner ...
+```
+
+So the current short-term behavior is explicit:
+
+- if the API is running inside Docker, project-scoped `POST /runs` returns a clear error instead of failing silently
+
 ## Mount Strategy
 
 The current project-runner execution path mounts:
@@ -142,6 +170,11 @@ curl -X POST http://127.0.0.1:3012/runs \
   -d '{"contextPack":"context-packs/agent-studio-v10-run-dev-from-task.md","agent":"pm","project":"agent-studio"}'
 ```
 
+Expected note:
+
+- this project-scoped request should be sent to a host-run API server
+- the same request sent to the Dockerized API returns a clear host-required error
+
 Read artifacts back:
 
 ```bash
@@ -164,6 +197,7 @@ curl 'http://127.0.0.1:3012/logs/<run-id>?project=agent-studio'
 - no production isolation guarantees
 - no Docker socket inside a container
 - no background jobs
+- Dockerized API cannot launch project-scoped runner containers
 
 ## Recommended Next Hardening Steps
 
