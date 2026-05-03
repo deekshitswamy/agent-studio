@@ -407,6 +407,42 @@
         margin-bottom: 10px;
       }
 
+      .project-file-list {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--ink);
+      }
+
+      .project-file-list li + li {
+        margin-top: 10px;
+      }
+
+      .project-file-item {
+        display: grid;
+        gap: 8px;
+      }
+
+      .project-file-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .preview-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 14px;
+        border-radius: 14px;
+        background: var(--panel-strong);
+        color: var(--ink);
+        text-decoration: none;
+      }
+
+      .preview-link:hover {
+        background: #e6ddcb;
+      }
+
       .source-label {
         margin: 0 0 10px;
         color: var(--muted);
@@ -537,6 +573,20 @@
                 <p class="hint">Optional. Used only by the human-triggered Run Idea flow.</p>
               </div>
 
+              <div class="field">
+                <label for="feedback-input">Feedback</label>
+                <textarea
+                  id="feedback-input"
+                  name="feedback-input"
+                  rows="6"
+                  placeholder="Describe how the current project prototype should change. Example: tighten the hero spacing, strengthen the CTA, and make the mobile layout feel less cramped."
+                ></textarea>
+                <p class="hint">
+                  Optional. Used only by the human-triggered Apply Feedback flow for an existing
+                  project prototype.
+                </p>
+              </div>
+
               <div class="row">
                 <div class="field">
                   <label for="task-path">Task Path</label>
@@ -564,6 +614,9 @@
               <div class="button-row">
                 <button class="primary" id="run-button" type="submit">Run Agent</button>
                 <button class="secondary" id="run-idea-button" type="button">Run Idea</button>
+                <button class="secondary" id="apply-feedback-button" type="button">
+                  Apply Feedback
+                </button>
               </div>
               <p class="status small" id="run-status">
                 Start the local API server, then submit a run.
@@ -697,6 +750,28 @@
               </p>
             </div>
           </section>
+
+          <section class="panel">
+            <div class="panel-header">
+              <p class="eyebrow">Project Files</p>
+              <h2>Created Files</h2>
+              <p>Lists visible files under the selected <code>projects/&lt;project-id&gt;/</code> workspace.</p>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="secondary" id="refresh-project-files-button" type="button">
+                  Refresh Project Files
+                </button>
+              </div>
+              <p class="status small" id="project-files-status">
+                Select a project to inspect project-scoped files.
+              </p>
+              <ul class="project-file-list" id="project-files-list"></ul>
+              <p class="placeholder small" id="project-files-empty">
+                Project files will appear here after you select a project and create files inside that workspace.
+              </p>
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -710,8 +785,10 @@
       const taskPathInput = document.querySelector("#task-path");
       const artifactPathInput = document.querySelector("#artifact-path");
       const ideaInput = document.querySelector("#idea-input");
+      const feedbackInput = document.querySelector("#feedback-input");
       const runButton = document.querySelector("#run-button");
       const runIdeaButton = document.querySelector("#run-idea-button");
+      const applyFeedbackButton = document.querySelector("#apply-feedback-button");
       const runStatus = document.querySelector("#run-status");
       const runResult = document.querySelector("#run-result");
       const projectIdInput = document.querySelector("#project-id");
@@ -735,6 +812,10 @@
       const taskDraftsStatus = document.querySelector("#task-drafts-status");
       const taskDraftsList = document.querySelector("#task-drafts-list");
       const taskDraftsEmpty = document.querySelector("#task-drafts-empty");
+      const refreshProjectFilesButton = document.querySelector("#refresh-project-files-button");
+      const projectFilesStatus = document.querySelector("#project-files-status");
+      const projectFilesList = document.querySelector("#project-files-list");
+      const projectFilesEmpty = document.querySelector("#project-files-empty");
       const workflowHint = document.querySelector("#workflow-hint");
       const CONTEXT_PACK_STORAGE_KEY = "agent-studio:last-context-pack";
       const PROJECT_ID_STORAGE_KEY = "agent-studio:last-project-id";
@@ -745,6 +826,7 @@
         draftCount: 0,
         latestLogId: "",
         savedTasks: [],
+        projectFiles: [],
         latestCompletedDevTaskPath: "",
         taskStatuses: {}
       };
@@ -839,6 +921,20 @@
         return `${url}${separator}project=${encodeURIComponent(projectId)}`;
       }
 
+      function buildProjectFileUrl(relativePath) {
+        const projectId = getSelectedProjectId();
+
+        if (!projectId || !relativePath) {
+          return "";
+        }
+
+        const baseUrl = API_BASE || window.location.origin;
+        const url = new URL(`${baseUrl}/project-file`);
+        url.searchParams.set("project", projectId);
+        url.searchParams.set("path", relativePath);
+        return API_BASE ? `${url.pathname}${url.search}` : url.toString();
+      }
+
       function getScopedRunLogPath(logId) {
         const normalizedLogId = String(logId || "").trim();
         const projectId = getSelectedProjectId();
@@ -852,6 +948,113 @@
         }
 
         return `.local/runs/${normalizedLogId}`;
+      }
+
+      function escapeTripleBackticks(value) {
+        return String(value || "").replace(/```/g, "``\\`");
+      }
+
+      function getPreferredPreviewFile() {
+        const files = Array.isArray(workflowState.projectFiles) ? workflowState.projectFiles : [];
+        return (
+          files.find((file) => file.isHtml && file.relativePath === "app/preview.html") ||
+          files.find((file) => file.isHtml) ||
+          null
+        );
+      }
+
+      async function fetchProjectFileContents(relativePath) {
+        const projectId = getSelectedProjectId();
+
+        if (!projectId || !relativePath) {
+          throw new Error("A selected project and relative file path are required.");
+        }
+
+        const baseUrl = API_BASE || window.location.origin;
+        const url = new URL(`${baseUrl}/project-file`);
+        url.searchParams.set("project", projectId);
+        url.searchParams.set("path", relativePath);
+
+        const response = await fetch(API_BASE ? `${url.pathname}${url.search}` : url.toString());
+        const rawText = await response.text();
+
+        if (!response.ok) {
+          let message = "Failed to load the current project file.";
+
+          try {
+            const payload = JSON.parse(rawText);
+            message = payload.error || message;
+          } catch (error) {
+            message = rawText || message;
+          }
+
+          throw new Error(message);
+        }
+
+        return rawText;
+      }
+
+      function buildFeedbackTaskBody({
+        projectId,
+        contextPack,
+        feedback,
+        previewFile,
+        currentFileContent
+      }) {
+        const normalizedFeedback = String(feedback || "")
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const feedbackBullets = normalizedFeedback.length
+          ? normalizedFeedback.map((line) => `- ${line}`)
+          : ["- No feedback notes were provided."];
+        const targetPath = previewFile?.path || `projects/${projectId}/app/preview.html`;
+        const verificationPath = previewFile?.relativePath || "app/preview.html";
+
+        return [
+          "## Scope",
+          "",
+          `- Update the existing project prototype inside \`projects/${projectId}/\`.`,
+          `- Treat \`${targetPath}\` as the primary file to improve for this feedback pass.`,
+          "- Keep the prototype single-file, local-first, and dependency-free.",
+          "",
+          "## Out of Scope",
+          "",
+          "- Backend changes",
+          "- New dependencies",
+          "- Background jobs",
+          "- Automatic repeated runs",
+          "",
+          "## Acceptance Criteria",
+          "",
+          `- \`${targetPath}\` is updated based on the feedback below.`,
+          "- The improved page feels more polished, usable, and preview-ready.",
+          "- The result remains responsive and self-contained in one HTML file.",
+          "",
+          "## Verification",
+          "",
+          "- Run project-scoped Dev for this saved feedback task.",
+          `- Confirm \`GET /project-file?project=${projectId}&path=${verificationPath}\` returns the updated HTML.`,
+          "- Review the resulting preview in the browser.",
+          "",
+          "## Dev Handoff",
+          "",
+          `- Context pack: \`${contextPack}\``,
+          `- Selected project: \`${projectId}\``,
+          `- Primary target file: \`${targetPath}\``,
+          "- Apply the feedback below by returning a structured full-file write artifact.",
+          "- Keep changes inside the selected project workspace only.",
+          "",
+          "### Feedback",
+          "",
+          ...feedbackBullets,
+          "",
+          "### Current File Snapshot",
+          "",
+          "```html",
+          escapeTripleBackticks(currentFileContent),
+          "```"
+        ].join("\n");
       }
 
       async function runDevForTask(taskPath) {
@@ -1021,6 +1224,7 @@
       async function submitRunRequest(body) {
         const requestBody = { ...body };
         const projectId = getSelectedProjectId();
+        let payload = null;
 
         if (projectId) {
           requestBody.project = projectId;
@@ -1028,6 +1232,7 @@
 
         runButton.disabled = true;
         runIdeaButton.disabled = true;
+        applyFeedbackButton.disabled = true;
         setStatus("Submitting run...");
         setResult({
           status: "submitting"
@@ -1043,7 +1248,7 @@
           });
 
           const rawText = await response.text();
-          let payload = rawText;
+          payload = rawText;
 
           try {
             payload = JSON.parse(rawText);
@@ -1077,6 +1282,10 @@
             updateWorkflowHint();
           }
 
+          if (requestBody.project) {
+            await loadProjectFiles();
+          }
+
           if (payload && typeof payload === "object" && typeof payload.id === "string") {
             if (payload.agent === "task-planner") {
               loadTaskPlannerSource(payload.id);
@@ -1108,6 +1317,7 @@
         } finally {
           runButton.disabled = false;
           runIdeaButton.disabled = false;
+          applyFeedbackButton.disabled = false;
         }
 
         return {
@@ -1132,6 +1342,11 @@
       function setTaskDraftsStatus(message, tone = "") {
         taskDraftsStatus.textContent = message;
         taskDraftsStatus.dataset.tone = tone;
+      }
+
+      function setProjectFilesStatus(message, tone = "") {
+        projectFilesStatus.textContent = message;
+        projectFilesStatus.dataset.tone = tone;
       }
 
       function slugifyTaskId(value) {
@@ -1476,6 +1691,101 @@
         }
       }
 
+      function renderProjectFiles(files) {
+        projectFilesList.innerHTML = "";
+        workflowState.projectFiles = Array.isArray(files) ? files : [];
+
+        if (!Array.isArray(files) || files.length === 0) {
+          projectFilesEmpty.hidden = false;
+          return;
+        }
+
+        projectFilesEmpty.hidden = true;
+
+        files.forEach((file) => {
+          const item = document.createElement("li");
+          const wrapper = document.createElement("div");
+          const name = document.createElement("div");
+          const pathLabel = document.createElement("div");
+          const actions = document.createElement("div");
+
+          item.className = "project-file-item";
+          wrapper.className = "project-file-item";
+          name.textContent = file.name || "(unnamed file)";
+          pathLabel.className = "task-path";
+          pathLabel.textContent = file.path || file.relativePath || "";
+          actions.className = "project-file-actions";
+
+          if (file.isHtml && file.relativePath) {
+            const previewLink = document.createElement("a");
+            previewLink.className = "preview-link";
+            previewLink.href = buildProjectFileUrl(file.relativePath);
+            previewLink.target = "_blank";
+            previewLink.rel = "noopener noreferrer";
+            previewLink.textContent = "Open Preview";
+            actions.appendChild(previewLink);
+          }
+
+          wrapper.appendChild(name);
+          wrapper.appendChild(pathLabel);
+
+          if (actions.children.length > 0) {
+            wrapper.appendChild(actions);
+          }
+
+          item.appendChild(wrapper);
+          projectFilesList.appendChild(item);
+        });
+      }
+
+      async function loadProjectFiles() {
+        const projectId = getSelectedProjectId();
+        refreshProjectFilesButton.disabled = true;
+
+        if (!projectId) {
+          renderProjectFiles([]);
+          projectFilesEmpty.hidden = false;
+          setProjectFilesStatus("Select a project to inspect project files.");
+          refreshProjectFilesButton.disabled = false;
+          return;
+        }
+
+        setProjectFilesStatus(`Loading project files for ${projectId}...`);
+
+        try {
+          const filesUrl = new URL(`${API_BASE || window.location.origin}/project-files`);
+          filesUrl.searchParams.set("project", projectId);
+          const response = await fetch(
+            API_BASE ? `${filesUrl.pathname}${filesUrl.search}` : filesUrl.toString()
+          );
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to load project files.");
+          }
+
+          const files = Array.isArray(payload.files) ? payload.files : [];
+          renderProjectFiles(files);
+
+          if (files.length === 0) {
+            setProjectFilesStatus(`No visible project files found for ${projectId}.`);
+          } else {
+            setProjectFilesStatus(
+              `Loaded ${files.length} project file${files.length === 1 ? "" : "s"} for ${projectId}.`,
+              "success"
+            );
+          }
+        } catch (error) {
+          renderProjectFiles([]);
+          projectFilesEmpty.hidden = false;
+          projectFilesEmpty.textContent =
+            "Project files could not be loaded from the local API.";
+          setProjectFilesStatus(error.message, "error");
+        } finally {
+          refreshProjectFilesButton.disabled = false;
+        }
+      }
+
       async function loadTaskPlannerSource(runId) {
         if (!runId) {
           setTaskPlannerStatus("A run id is required to inspect Task Planner output.", "error");
@@ -1612,6 +1922,7 @@
 
       projectIdInput.addEventListener("change", () => {
         loadSavedTasks();
+        loadProjectFiles();
       });
 
       runIdeaButton.addEventListener("click", async () => {
@@ -1653,6 +1964,104 @@
           agent: "task-planner",
           withArtifact: getScopedRunLogPath(pmRun.payload.logId)
         });
+      });
+
+      applyFeedbackButton.addEventListener("click", async () => {
+        const contextPack = contextPackInput.value.trim();
+        const projectId = getSelectedProjectId();
+        const feedback = feedbackInput.value.trim();
+
+        if (!contextPack) {
+          setStatus("Context pack path is required before applying feedback.", "error");
+          setResult({
+            error: "Context pack path is required before using Apply Feedback."
+          });
+          contextPackInput.focus();
+          return;
+        }
+
+        if (!projectId) {
+          setStatus("Project ID is required before applying feedback.", "error");
+          setResult({
+            error: "Select a project before using Apply Feedback."
+          });
+          projectIdInput.focus();
+          return;
+        }
+
+        if (!feedback) {
+          setStatus("Feedback text is required before applying feedback.", "error");
+          setResult({
+            error: "Provide feedback before using Apply Feedback."
+          });
+          feedbackInput.focus();
+          return;
+        }
+
+        applyFeedbackButton.disabled = true;
+        setStatus("Preparing a reviewed feedback task...");
+        setResult({
+          status: "preparing-feedback-task"
+        });
+
+        try {
+          await loadProjectFiles();
+
+          const previewFile = getPreferredPreviewFile();
+
+          if (!previewFile) {
+            throw new Error(
+              `No HTML preview file was found for project ${projectId}. Create a prototype preview before applying feedback.`
+            );
+          }
+
+          const currentFileContent = await fetchProjectFileContents(previewFile.relativePath);
+          const feedbackTaskId = `feedback-${slugifyTaskId(projectId) || "project"}-${Date.now()}`;
+          const feedbackTitle = `Apply Feedback ${new Date().toLocaleString()}`;
+          const savePayload = {
+            taskId: feedbackTaskId,
+            title: feedbackTitle,
+            body: buildFeedbackTaskBody({
+              projectId,
+              contextPack,
+              feedback,
+              previewFile,
+              currentFileContent
+            }),
+            contextPack,
+            project: projectId
+          };
+
+          const saveResponse = await fetch(`${API_BASE}/tasks`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(savePayload)
+          });
+          const saveResult = await saveResponse.json();
+
+          if (!saveResponse.ok) {
+            throw new Error(saveResult.error || "Failed to save the reviewed feedback task.");
+          }
+
+          await loadSavedTasks();
+          setStatus(`Saved feedback task: ${saveResult.task.path}`, "success");
+
+          await submitRunRequest({
+            contextPack,
+            agent: "dev",
+            task: saveResult.task.path,
+            llm: true
+          });
+        } catch (error) {
+          setStatus("Apply Feedback failed.", "error");
+          setResult({
+            error: error.message
+          });
+        } finally {
+          applyFeedbackButton.disabled = false;
+        }
       });
 
       fetchLogsButton.addEventListener("click", async () => {
@@ -1707,12 +2116,17 @@
         loadSavedTasks();
       });
 
+      refreshProjectFilesButton.addEventListener("click", () => {
+        loadProjectFiles();
+      });
+
       restoreContextPack();
       restoreProjectId();
       workflowState.taskStatuses = loadTaskStatusesFromStorage();
       updateWorkflowHint();
       loadAgents();
       loadSavedTasks();
+      loadProjectFiles();
     </script>
   </body>
 </html>
