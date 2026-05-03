@@ -898,6 +898,45 @@
 
           <section class="panel">
             <div class="panel-header">
+              <p class="eyebrow">Design Handoff</p>
+              <h2>Design Before Implementation</h2>
+              <p>Shows the selected project design handoff from <code>projects/&lt;project-id&gt;/design/handoff.md</code>.</p>
+            </div>
+            <div class="panel-body">
+              <div class="button-row">
+                <button class="secondary" id="refresh-project-design-button" type="button">
+                  Refresh Design Handoff
+                </button>
+              </div>
+              <div class="field">
+                <label for="design-feedback-input">Design Feedback</label>
+                <textarea
+                  id="design-feedback-input"
+                  name="design-feedback-input"
+                  rows="5"
+                  placeholder="Describe the design changes you want before implementation."
+                ></textarea>
+                <p class="helper">
+                  Human-triggered only. This updates <code>projects/&lt;project-id&gt;/design/handoff.md</code> through the UX Designer step and does not auto-run Task Planner or Dev.
+                </p>
+                <div class="button-row">
+                  <button class="secondary" id="apply-design-feedback-button" type="button">
+                    Apply to Design
+                  </button>
+                </div>
+              </div>
+              <p class="status small" id="project-design-status">
+                Select a project to inspect its design handoff.
+              </p>
+              <div class="readme-preview" id="project-design-preview" hidden></div>
+              <p class="placeholder small" id="project-design-empty">
+                Design handoff content will appear here after the selected project has a reviewed handoff.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-header">
               <p class="eyebrow">Project Overview</p>
               <h2>README Summary</h2>
               <p>Shows the selected project README from <code>projects/&lt;project-id&gt;/README.md</code>.</p>
@@ -993,6 +1032,8 @@
       const runButton = document.querySelector("#run-button");
       const runIdeaButton = document.querySelector("#run-idea-button");
       const applyFeedbackButton = document.querySelector("#apply-feedback-button");
+      const designFeedbackInput = document.querySelector("#design-feedback-input");
+      const applyDesignFeedbackButton = document.querySelector("#apply-design-feedback-button");
       const runStatus = document.querySelector("#run-status");
       const runResult = document.querySelector("#run-result");
       const projectIdInput = document.querySelector("#project-id");
@@ -1016,6 +1057,10 @@
       const taskDraftsStatus = document.querySelector("#task-drafts-status");
       const taskDraftsList = document.querySelector("#task-drafts-list");
       const taskDraftsEmpty = document.querySelector("#task-drafts-empty");
+      const refreshProjectDesignButton = document.querySelector("#refresh-project-design-button");
+      const projectDesignStatus = document.querySelector("#project-design-status");
+      const projectDesignPreview = document.querySelector("#project-design-preview");
+      const projectDesignEmpty = document.querySelector("#project-design-empty");
       const refreshProjectReadmeButton = document.querySelector("#refresh-project-readme-button");
       const projectReadmeStatus = document.querySelector("#project-readme-status");
       const projectReadmePreview = document.querySelector("#project-readme-preview");
@@ -1040,6 +1085,7 @@
         pendingTasksCount: 0,
         draftCount: 0,
         latestLogId: "",
+        projectDesignContent: "",
         projectReadmeContent: "",
         savedTasks: [],
         projectFiles: [],
@@ -1292,6 +1338,21 @@
         projectReadmePreview.innerHTML = markdownToHtml(workflowState.projectReadmeContent);
         projectReadmePreview.hidden = false;
         projectReadmeEmpty.hidden = true;
+      }
+
+      function renderProjectDesign(markdown) {
+        workflowState.projectDesignContent = typeof markdown === "string" ? markdown : "";
+
+        if (!workflowState.projectDesignContent.trim()) {
+          projectDesignPreview.hidden = true;
+          projectDesignPreview.innerHTML = "";
+          projectDesignEmpty.hidden = false;
+          return;
+        }
+
+        projectDesignPreview.innerHTML = markdownToHtml(workflowState.projectDesignContent);
+        projectDesignPreview.hidden = false;
+        projectDesignEmpty.hidden = true;
       }
 
       async function fetchProjectFileContents(relativePath) {
@@ -1564,6 +1625,7 @@
         runButton.disabled = true;
         runIdeaButton.disabled = true;
         applyFeedbackButton.disabled = true;
+        applyDesignFeedbackButton.disabled = true;
         setStatus("Submitting run...");
         setResult({
           status: "submitting"
@@ -1614,6 +1676,7 @@
           }
 
           if (requestBody.project) {
+            await loadProjectDesign();
             await loadProjectFiles();
             await loadProjectHistory();
           }
@@ -1650,6 +1713,7 @@
           runButton.disabled = false;
           runIdeaButton.disabled = false;
           applyFeedbackButton.disabled = false;
+          applyDesignFeedbackButton.disabled = false;
         }
 
         return {
@@ -1679,6 +1743,11 @@
       function setProjectFilesStatus(message, tone = "") {
         projectFilesStatus.textContent = message;
         projectFilesStatus.dataset.tone = tone;
+      }
+
+      function setProjectDesignStatus(message, tone = "") {
+        projectDesignStatus.textContent = message;
+        projectDesignStatus.dataset.tone = tone;
       }
 
       function setProjectReadmeStatus(message, tone = "") {
@@ -2335,6 +2404,43 @@
         }
       }
 
+      async function loadProjectDesign() {
+        const projectId = getSelectedProjectId();
+        refreshProjectDesignButton.disabled = true;
+
+        if (!projectId) {
+          renderProjectDesign("");
+          setProjectDesignStatus("Select a project to inspect its design handoff.");
+          refreshProjectDesignButton.disabled = false;
+          return;
+        }
+
+        setProjectDesignStatus(`Loading design handoff for ${projectId}...`);
+
+        try {
+          const designUrl = new URL(`${API_BASE || window.location.origin}/project-design`);
+          designUrl.searchParams.set("project", projectId);
+          const response = await fetch(
+            API_BASE ? `${designUrl.pathname}${designUrl.search}` : designUrl.toString()
+          );
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to load project design handoff.");
+          }
+
+          renderProjectDesign(payload.content || "");
+          setProjectDesignStatus(`Loaded design handoff for ${projectId}.`, "success");
+        } catch (error) {
+          renderProjectDesign("");
+          projectDesignEmpty.textContent =
+            "Project design handoff could not be loaded from the local API.";
+          setProjectDesignStatus(error.message, "error");
+        } finally {
+          refreshProjectDesignButton.disabled = false;
+        }
+      }
+
       async function loadProjectHistory() {
         const projectId = getSelectedProjectId();
         refreshProjectHistoryButton.disabled = true;
@@ -2519,6 +2625,7 @@
 
       projectIdInput.addEventListener("change", () => {
         loadSavedTasks();
+        loadProjectDesign();
         loadProjectReadme();
         loadProjectFiles();
         loadProjectHistory();
@@ -2663,12 +2770,80 @@
         }
       });
 
+      applyDesignFeedbackButton.addEventListener("click", async () => {
+        const contextPack = contextPackInput.value.trim();
+        const projectId = getSelectedProjectId();
+        const feedback = designFeedbackInput.value.trim();
+        const handoffPath = projectId ? `projects/${projectId}/design/handoff.md` : "";
+
+        if (!contextPack) {
+          setStatus("Context pack path is required before applying design feedback.", "error");
+          setResult({
+            error: "Context pack path is required before using Apply to Design."
+          });
+          contextPackInput.focus();
+          return;
+        }
+
+        if (!projectId) {
+          setStatus("Project ID is required before applying design feedback.", "error");
+          setResult({
+            error: "Select a project before using Apply to Design."
+          });
+          projectIdInput.focus();
+          return;
+        }
+
+        if (!feedback) {
+          setStatus("Design feedback is required before applying it.", "error");
+          setResult({
+            error: "Provide design feedback before using Apply to Design."
+          });
+          designFeedbackInput.focus();
+          return;
+        }
+
+        try {
+          setStatus("Checking the current design handoff...");
+          const currentDesign = await fetchProjectFileContents("design/handoff.md");
+
+          if (!currentDesign.trim()) {
+            throw new Error(`Project design handoff is empty for ${projectId}.`);
+          }
+
+          setStatus("Running UX Designer with the new design feedback...");
+          const runResult = await submitRunRequest({
+            contextPack,
+            agent: "ux-designer",
+            idea: feedback,
+            withArtifact: handoffPath,
+            llm: true
+          });
+
+          if (!runResult.ok) {
+            return;
+          }
+
+          setStatus("Design handoff updated successfully.", "success");
+          await loadProjectDesign();
+        } catch (error) {
+          setStatus("Apply to Design failed.", "error");
+          setResult({
+            error: error.message
+          });
+        }
+      });
+
       fetchLogsButton.addEventListener("click", async () => {
         await fetchLogById(logIdInput.value);
       });
 
       refreshTasksButton.addEventListener("click", () => {
         loadSavedTasks();
+      });
+
+      refreshProjectDesignButton.addEventListener("click", () => {
+        loadProjectDesign();
       });
 
       refreshProjectReadmeButton.addEventListener("click", () => {
@@ -2689,6 +2864,7 @@
       updateWorkflowHint();
       loadAgents();
       loadSavedTasks();
+      loadProjectDesign();
       loadProjectReadme();
       loadProjectFiles();
       loadProjectHistory();

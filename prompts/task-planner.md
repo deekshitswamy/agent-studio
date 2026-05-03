@@ -21,6 +21,7 @@ Output style:
 Guidance:
 - treat the context pack as the primary execution input for Agent Runner v1
 - treat the Architect output as the planning source for this step
+- if `projects/<project-id>/design/handoff.md` is provided in the execution context, read it and incorporate it into the generated tasks
 - split work into the smallest useful tasks
 - prefer clear sequencing over broad planning
 - keep tasks tightly tied to the current repo state and known gaps

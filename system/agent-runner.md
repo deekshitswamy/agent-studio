@@ -97,6 +97,22 @@ Primary output:
 
 - clarity improvements to docs, templates, and naming
 
+Optional project design handoff workflow:
+
+1. Human explicitly chooses UX Designer when a design pass is needed before implementation.
+2. UX Designer produces `projects/<project-id>/design/handoff.md`.
+3. Human reviews the handoff before using it downstream.
+4. Task Planner may use that handoff as supporting context for saved Dev tasks.
+
+Rules:
+
+- UX Designer is optional and human-triggered
+- UX Designer does not auto-chain into Task Planner or Dev
+- the current task and file workflow remains the source of truth
+- the design folder contract is:
+  - `projects/<project-id>/design/handoff.md` required when a design handoff exists
+  - additional design files may exist later, but are optional for now
+
 ### 7. Task Planner
 
 The task planner converts the approach into an ordered execution list.

@@ -10,7 +10,7 @@ const { resolveSafeProjectWritePath } = require("../src/mcp/safe-write-paths");
 
 const DEFAULT_PORT = 3000;
 const DEFAULT_HOST = "127.0.0.1";
-const SUPPORTED_AGENTS = Object.freeze(["pm", "architect", "task-planner", "dev", "qa"]);
+const SUPPORTED_AGENTS = Object.freeze(["pm", "architect", "ux-designer", "task-planner", "dev", "qa"]);
 const PROJECT_RUNNER_SERVICE_NAME = "agent-studio-project-runner";
 const RUN_ARTIFACT_DIR = path.resolve(__dirname, "..", ".local", "runs");
 const UI_INDEX_PATH = path.resolve(__dirname, "..", "ui", "index.html");
@@ -98,6 +98,10 @@ function validateRunRequest(body) {
 
   if (agent === "dev" && (typeof body.task !== "string" || !body.task.trim())) {
     throw new Error("Dev runs require explicit `task`.");
+  }
+
+  if (agent === "ux-designer" && (typeof body.project !== "string" || !body.project.trim())) {
+    throw new Error("UX Designer runs require explicit `project`.");
   }
 
   if (
@@ -256,6 +260,41 @@ function createIdeaArtifactFile({ body, repoRoot, runArtifactDir, runId }) {
   return path.relative(repoRoot, artifactPath);
 }
 
+function createCombinedArtifactFile({
+  repoRoot,
+  runArtifactDir,
+  runId,
+  existingArtifactPath,
+  generatedIdeaArtifactPath
+}) {
+  const resolvedExistingArtifactPath = path.resolve(repoRoot, existingArtifactPath);
+
+  if (!fs.existsSync(resolvedExistingArtifactPath)) {
+    throw new Error(`Supporting artifact not found: ${existingArtifactPath}`);
+  }
+
+  if (!generatedIdeaArtifactPath) {
+    return existingArtifactPath;
+  }
+
+  const resolvedIdeaArtifactPath = path.resolve(repoRoot, generatedIdeaArtifactPath);
+  const combinedArtifactPath = path.join(runArtifactDir, `${runId}.artifact.md`);
+  const existingArtifactMarkdown = fs.readFileSync(resolvedExistingArtifactPath, "utf8").trim();
+  const ideaArtifactMarkdown = fs.readFileSync(resolvedIdeaArtifactPath, "utf8").trim();
+  const combinedMarkdown = [
+    "# Supporting Artifact",
+    "",
+    existingArtifactMarkdown,
+    "",
+    "# Feedback",
+    "",
+    ideaArtifactMarkdown
+  ].join("\n");
+
+  fs.writeFileSync(combinedArtifactPath, `${combinedMarkdown}\n`, "utf8");
+  return path.relative(repoRoot, combinedArtifactPath);
+}
+
 function runAgentStudioCommand({ body, repoRoot }) {
   const startedAt = new Date().toISOString();
   const id = createRunId();
@@ -271,7 +310,15 @@ function runAgentStudioCommand({ body, repoRoot }) {
     runId: id
   });
 
-  if (generatedIdeaArtifactPath && !executionBody.withArtifact) {
+  if (generatedIdeaArtifactPath && typeof executionBody.withArtifact === "string" && executionBody.withArtifact.trim()) {
+    executionBody.withArtifact = createCombinedArtifactFile({
+      repoRoot,
+      runArtifactDir,
+      runId: id,
+      existingArtifactPath: executionBody.withArtifact.trim(),
+      generatedIdeaArtifactPath
+    });
+  } else if (generatedIdeaArtifactPath && !executionBody.withArtifact) {
     executionBody.withArtifact = generatedIdeaArtifactPath;
   }
 
@@ -285,6 +332,7 @@ function runAgentStudioCommand({ body, repoRoot }) {
   let exitCode = typeof result.status === "number" ? result.status : 1;
   let status = exitCode === 0 ? "completed" : "failed";
   let writeArtifactMetadata = null;
+  let designHandoffMetadata = null;
 
   try {
     writeArtifactMetadata = maybeApplyDevWriteArtifact({
@@ -292,14 +340,26 @@ function runAgentStudioCommand({ body, repoRoot }) {
       repoRoot,
       stdout
     });
+    designHandoffMetadata = maybeSaveUxDesignHandoff({
+      body,
+      repoRoot,
+      stdout
+    });
   } catch (error) {
     status = "failed";
     exitCode = exitCode === 0 ? 1 : exitCode;
-    writeArtifactMetadata = {
-      detected: true,
-      applied: false,
-      error: error.message
-    };
+    if (body.agent.trim() === "dev") {
+      writeArtifactMetadata = {
+        detected: true,
+        applied: false,
+        error: error.message
+      };
+    } else if (body.agent.trim() === "ux-designer") {
+      designHandoffMetadata = {
+        saved: false,
+        error: error.message
+      };
+    }
   }
 
   const logSections = [
@@ -319,6 +379,12 @@ function runAgentStudioCommand({ body, repoRoot }) {
     logSections.push("");
     logSections.push("writeArtifact:");
     logSections.push(JSON.stringify(writeArtifactMetadata, null, 2));
+  }
+
+  if (designHandoffMetadata) {
+    logSections.push("");
+    logSections.push("designHandoff:");
+    logSections.push(JSON.stringify(designHandoffMetadata, null, 2));
   }
 
   const logOutput = logSections.join("\n");
@@ -346,6 +412,10 @@ function runAgentStudioCommand({ body, repoRoot }) {
 
   if (writeArtifactMetadata) {
     metadata.writeArtifact = writeArtifactMetadata;
+  }
+
+  if (designHandoffMetadata) {
+    metadata.designHandoff = designHandoffMetadata;
   }
 
   fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
@@ -1297,6 +1367,98 @@ function maybeApplyDevWriteArtifact({ body, repoRoot, stdout }) {
   };
 }
 
+function extractExecutionOutputContent(markdown) {
+  if (typeof markdown !== "string" || !markdown.trim()) {
+    return "";
+  }
+
+  const lines = markdown.split(/\r?\n/);
+  const outputIndex = lines.findIndex((line) => line.trim().toLowerCase() === "## output");
+
+  if (outputIndex === -1) {
+    return markdown.trim();
+  }
+
+  return lines
+    .slice(outputIndex + 1)
+    .join("\n")
+    .trim();
+}
+
+function extractDesignHandoffMarkdown(content) {
+  if (typeof content !== "string" || !content.trim()) {
+    return "";
+  }
+
+  const fencedMarkdownMatch = content.match(/```md\s*([\s\S]*?)```/i);
+
+  if (
+    fencedMarkdownMatch &&
+    /^#\s+Design Handoff:/im.test(fencedMarkdownMatch[1].trim())
+  ) {
+    return fencedMarkdownMatch[1].trim();
+  }
+
+  const designSectionHeadingMatch = content.match(/^##\s+Design Handoff\s*$/im);
+
+  if (designSectionHeadingMatch && typeof designSectionHeadingMatch.index === "number") {
+    const sectionStart = designSectionHeadingMatch.index + designSectionHeadingMatch[0].length;
+    const remainingContent = content.slice(sectionStart);
+    const nextHandoffMatch = remainingContent.match(/\n##\s+Recommended Next Handoff\s*$/im);
+    const sectionBody = nextHandoffMatch
+      ? remainingContent.slice(0, nextHandoffMatch.index)
+      : remainingContent;
+
+    return sectionBody.trim();
+  }
+
+  const headingIndex = content.search(/^#\s+Design Handoff:/im);
+
+  if (headingIndex >= 0) {
+    return content.slice(headingIndex).trim();
+  }
+
+  return content.trim();
+}
+
+function getProjectDesignHandoffPath(projectId) {
+  return path.join(getProjectRoot(projectId), "design", "handoff.md");
+}
+
+function maybeSaveUxDesignHandoff({ body, repoRoot, stdout }) {
+  if (body.agent.trim() !== "ux-designer") {
+    return null;
+  }
+
+  if (typeof body.project !== "string" || !body.project.trim()) {
+    return null;
+  }
+
+  const runPayload = extractRunResultPayload(stdout);
+
+  if (!runPayload?.executed_agent?.output_markdown) {
+    return null;
+  }
+
+  const normalizedProjectId = normalizeProjectId(body.project);
+  const handoffPath = getProjectDesignHandoffPath(normalizedProjectId);
+  const handoffContent = extractDesignHandoffMarkdown(
+    extractExecutionOutputContent(runPayload.executed_agent.output_markdown)
+  );
+
+  if (!handoffContent) {
+    return null;
+  }
+
+  fs.mkdirSync(path.dirname(handoffPath), { recursive: true });
+  fs.writeFileSync(handoffPath, `${handoffContent}\n`, "utf8");
+
+  return {
+    saved: true,
+    path: path.relative(repoRoot, handoffPath)
+  };
+}
+
 function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } = {}) {
   return http.createServer(async (request, response) => {
     if (!request.url) {
@@ -1320,6 +1482,7 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
           "/health",
           "/agents",
           "/tasks",
+          "/project-design",
           "/project-readme",
           "/project-history",
           "/project-files",
@@ -1371,6 +1534,40 @@ function createAgentServiceServer({ repoRoot = path.resolve(__dirname, "..") } =
         sendJson(response, 200, {
           project: normalizeProjectId(projectId),
           files: listProjectFiles(projectId)
+        });
+      } catch (error) {
+        sendJson(response, error.statusCode || 400, {
+          error: error.message
+        });
+      }
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/project-design") {
+      const projectId = url.searchParams.get("project") || "";
+
+      if (!projectId.trim()) {
+        sendJson(response, 400, {
+          error: "Project id is required for project design handoff."
+        });
+        return;
+      }
+
+      try {
+        const normalizedProjectId = normalizeProjectId(projectId);
+        const designPath = getProjectDesignHandoffPath(normalizedProjectId);
+
+        if (!fs.existsSync(designPath)) {
+          sendJson(response, 404, {
+            error: `Project design handoff not found for: ${normalizedProjectId}`
+          });
+          return;
+        }
+
+        sendJson(response, 200, {
+          project: normalizedProjectId,
+          path: path.relative(repoRoot, designPath),
+          content: fs.readFileSync(designPath, "utf8")
         });
       } catch (error) {
         sendJson(response, error.statusCode || 400, {

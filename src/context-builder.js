@@ -15,6 +15,7 @@ function buildAgentContext({
   repoRoot,
   contextPackPath,
   taskPath = null,
+  additionalPaths = [],
   role = "orchestrator",
   auditTrail = null
 }) {
@@ -56,11 +57,29 @@ function buildAgentContext({
       : null
   };
 
+  const resolvedAdditionalPaths = Array.isArray(additionalPaths)
+    ? additionalPaths
+        .filter(Boolean)
+        .map((filePath) => path.resolve(filePath))
+        .filter((filePath) => !resolvedTaskPath || filePath !== resolvedTaskPath)
+    : [];
+
+  context.additionalContextFiles = resolvedAdditionalPaths.map((filePath) => ({
+    path: filePath,
+    markdown: readScopedFile({
+      repoRoot,
+      role,
+      filePath,
+      auditTrail
+    })
+  }));
+
   context.files = [
     path.relative(repoRoot, context.contextPackPath),
     path.relative(repoRoot, context.agentsPath),
     path.relative(repoRoot, context.workflowPath),
-    ...(context.taskFilePath ? [path.relative(repoRoot, context.taskFilePath)] : [])
+    ...(context.taskFilePath ? [path.relative(repoRoot, context.taskFilePath)] : []),
+    ...context.additionalContextFiles.map((file) => path.relative(repoRoot, file.path))
   ];
 
   return context;

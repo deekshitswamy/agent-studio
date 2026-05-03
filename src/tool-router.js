@@ -19,6 +19,7 @@ const ROLE_TOOL_ALLOWLIST = {
   pm: ["read_file"],
   architect: ["read_file"],
   ux: ["read_file"],
+  "ux-designer": ["read_file"],
   "task-planner": ["read_file", "validate_task_file"],
   dev: ["read_file", "validate_task_file"],
   qa: ["read_file", "validate_task_file", "validate_queue"],

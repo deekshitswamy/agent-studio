@@ -720,14 +720,19 @@ function extractResponseText(responseBody) {
   return combined;
 }
 
-function buildLlmInstructions({ agentsMarkdown, workflowMarkdown, agentTemplate }) {
+function buildLlmInstructions({ agentsMarkdown, workflowMarkdown, agentTemplate, agentName }) {
+  const responseFormat =
+    agentName === "ux-designer"
+      ? "Respond in concise markdown with these sections: Summary, Design Goal, Design Handoff, Recommended Next Handoff."
+      : "Respond in concise markdown with these sections: Summary, Clarified Objective, Acceptance Criteria, Risks Or Assumptions, Recommended Next Handoff.";
+
   return [
     "You are executing one agent step inside the DIVYA Agent Company system.",
     "Stay within the current execution. Do not chain to multiple agents.",
     "Treat the context pack as the required Agent Runner v1 input.",
     "Treat idea.md or other raw source notes as optional supporting material only if the context pack references them.",
     "Do not invent UI, API, or async automation work unless already in scope.",
-    "Respond in concise markdown with these sections: Summary, Clarified Objective, Acceptance Criteria, Risks Or Assumptions, Recommended Next Handoff.",
+    responseFormat,
     "",
     "# Repo Rules",
     buildRuleSummary(agentsMarkdown),
@@ -740,7 +745,14 @@ function buildLlmInstructions({ agentsMarkdown, workflowMarkdown, agentTemplate 
   ].join("\n");
 }
 
-function buildLlmInput({ contextPackMarkdown, executionRequest, stateMarkdown, artifactMarkdown, taskMarkdown }) {
+function buildLlmInput({
+  contextPackMarkdown,
+  executionRequest,
+  stateMarkdown,
+  artifactMarkdown,
+  taskMarkdown,
+  designHandoffMarkdown
+}) {
   const sections = [
     "# Context Pack",
     contextPackMarkdown.trim()
@@ -764,6 +776,12 @@ function buildLlmInput({ contextPackMarkdown, executionRequest, stateMarkdown, a
     sections.push(artifactMarkdown.trim());
   }
 
+  if (designHandoffMarkdown) {
+    sections.push("");
+    sections.push("# Design Handoff");
+    sections.push(designHandoffMarkdown.trim());
+  }
+
   sections.push("");
   sections.push("# Execution Request");
   sections.push(executionRequest.trim());
@@ -779,6 +797,30 @@ function buildLlmInput({ contextPackMarkdown, executionRequest, stateMarkdown, a
       ]
     }
   ];
+}
+
+function inferProjectIdFromWorkspacePath(repoRoot, candidatePath) {
+  if (!candidatePath) {
+    return null;
+  }
+
+  const relativePath = path.relative(repoRoot, path.resolve(candidatePath));
+  const segments = relativePath.split(path.sep).filter(Boolean);
+
+  if (segments[0] !== "projects" || !segments[1]) {
+    return null;
+  }
+
+  return segments[1];
+}
+
+function findProjectDesignHandoffPath(repoRoot, projectId) {
+  if (!projectId) {
+    return null;
+  }
+
+  const handoffPath = path.join(repoRoot, "projects", projectId, "design", "handoff.md");
+  return fs.existsSync(handoffPath) ? handoffPath : null;
 }
 
 function buildDirectAgentRequest(agentName, currentUnderstanding, selectedTaskFilePath) {
@@ -874,6 +916,8 @@ async function executeNextAgent({
   taskMarkdown,
   artifactFilePath,
   artifactMarkdown,
+  designHandoffFilePath,
+  designHandoffMarkdown,
   agentContextFiles,
   agentsMarkdown,
   workflowMarkdown,
@@ -910,14 +954,16 @@ async function executeNextAgent({
       instructions: buildLlmInstructions({
         agentsMarkdown,
         workflowMarkdown,
-        agentTemplate
+        agentTemplate,
+        agentName: nextAgent
       }),
       input: buildLlmInput({
         contextPackMarkdown,
         executionRequest: nextPrompt,
         stateMarkdown,
         artifactMarkdown,
-        taskMarkdown
+        taskMarkdown,
+        designHandoffMarkdown
       })
     });
 
@@ -944,6 +990,9 @@ async function executeNextAgent({
       state_file: stateFilePath ? path.relative(repoRoot, stateFilePath) : null,
       task_file: taskFilePath ? path.relative(repoRoot, taskFilePath) : null,
       artifact_file: artifactFilePath ? path.relative(repoRoot, artifactFilePath) : null,
+      design_handoff_file: designHandoffFilePath
+        ? path.relative(repoRoot, designHandoffFilePath)
+        : null,
       context_files: agentContextFiles,
       tool_audit: toolAudit,
       output_preview: responseText.split(/\r?\n/).slice(0, 12)
@@ -980,6 +1029,9 @@ async function executeNextAgent({
       state_file: stateFilePath ? path.relative(repoRoot, stateFilePath) : null,
       task_file: taskFilePath ? path.relative(repoRoot, taskFilePath) : null,
       artifact_file: artifactFilePath ? path.relative(repoRoot, artifactFilePath) : null,
+      design_handoff_file: designHandoffFilePath
+        ? path.relative(repoRoot, designHandoffFilePath)
+        : null,
       context_files: agentContextFiles,
       tool_audit: toolAudit,
       result: executionResult
@@ -1032,6 +1084,8 @@ async function runDirectAgent({
   taskMarkdown,
   artifactFilePath,
   artifactMarkdown,
+  designHandoffFilePath,
+  designHandoffMarkdown,
   agentContextFiles,
   agentsMarkdown,
   workflowMarkdown,
@@ -1059,6 +1113,8 @@ async function runDirectAgent({
     taskMarkdown,
     artifactFilePath,
     artifactMarkdown,
+    designHandoffFilePath,
+    designHandoffMarkdown,
     agentContextFiles,
     toolAudit,
     agentsMarkdown,
@@ -1079,6 +1135,7 @@ async function runDirectAgent({
     state_file: stateFilePath ? path.relative(repoRoot, stateFilePath) : null,
     task_file: selectedTaskRelativePath,
     artifact_file: artifactRelativePath,
+    design_handoff_file: designHandoffFilePath ? path.relative(repoRoot, designHandoffFilePath) : null,
     context_files: agentContextFiles,
     tool_audit: toolAudit,
     executed_agent_log: executionPayload.saved_to,
@@ -1132,10 +1189,17 @@ async function runAgent({
   const stateMarkdown = readOptionalFile(repoRoot, activeRole, stateFilePath, toolAudit);
   const selectedTaskPath =
     directAgent && slugifyAgentName(directAgent) === "dev" && taskPath ? path.resolve(process.cwd(), taskPath) : null;
+  const artifactFilePath = artifactPath ? path.resolve(process.cwd(), artifactPath) : null;
+  const inferredProjectId =
+    inferProjectIdFromWorkspacePath(repoRoot, selectedTaskPath) ||
+    inferProjectIdFromWorkspacePath(repoRoot, artifactFilePath) ||
+    inferProjectIdFromWorkspacePath(repoRoot, contextPackPath);
+  const designHandoffPath = findProjectDesignHandoffPath(repoRoot, inferredProjectId);
   const agentContext = buildAgentContext({
     repoRoot,
     contextPackPath,
     taskPath: selectedTaskPath,
+    additionalPaths: designHandoffPath ? [designHandoffPath] : [],
     role: activeRole,
     auditTrail: toolAudit
   });
@@ -1144,8 +1208,10 @@ async function runAgent({
   const workflowMarkdown = agentContext.workflowMarkdown;
   const taskFilePath = agentContext.taskFilePath;
   const taskMarkdown = agentContext.taskMarkdown;
-  const artifactFilePath = artifactPath ? path.resolve(process.cwd(), artifactPath) : null;
   const artifactMarkdown = artifactFilePath ? readFile(repoRoot, activeRole, artifactFilePath, toolAudit) : null;
+  const designHandoffFilePath = designHandoffPath || null;
+  const designHandoffMarkdown =
+    agentContext.additionalContextFiles.find((file) => file.path === designHandoffFilePath)?.markdown || null;
 
   const contextSections = parseSections(contextPackMarkdown);
   const workflowSteps = parseWorkflowSteps(workflowMarkdown);
@@ -1163,6 +1229,8 @@ async function runAgent({
       taskMarkdown,
       artifactFilePath,
       artifactMarkdown,
+      designHandoffFilePath,
+      designHandoffMarkdown,
       agentContextFiles: agentContext.files,
       toolAudit,
       agentsMarkdown,
@@ -1224,7 +1292,9 @@ async function runAgent({
       nextAgent,
       nextPrompt,
       timestamp,
-      executionMode: useLlm ? "llm" : "mock"
+      executionMode: useLlm ? "llm" : "mock",
+      designHandoffFilePath,
+      designHandoffMarkdown
     });
     executionPayload = pmExecutionPayload;
     filesToSave.push(pmExecutionPayload.saved_to);
@@ -1245,7 +1315,9 @@ async function runAgent({
         nextAgent: "architect",
         nextPrompt: buildArchitectRequestFromPm(pmExecutionPayload),
         timestamp,
-        executionMode: useLlm ? "llm" : "mock"
+        executionMode: useLlm ? "llm" : "mock",
+        designHandoffFilePath,
+        designHandoffMarkdown
       });
       executionPayload = architectExecutionPayload;
       filesToSave.push(architectExecutionPayload.saved_to);
@@ -1270,7 +1342,9 @@ async function runAgent({
         nextAgent: "architect",
         nextPrompt: buildArchitectRequestFromPm(pmExecutionPayload),
         timestamp,
-        executionMode: useLlm ? "llm" : "mock"
+        executionMode: useLlm ? "llm" : "mock",
+        designHandoffFilePath,
+        designHandoffMarkdown
       });
       executionPayload = architectExecutionPayload;
       filesToSave.push(architectExecutionPayload.saved_to);
@@ -1303,7 +1377,9 @@ async function runAgent({
           nextAgent: finalAgent,
           nextPrompt: finalPrompt,
           timestamp,
-          executionMode: useLlm ? "llm" : "mock"
+          executionMode: useLlm ? "llm" : "mock",
+          designHandoffFilePath,
+          designHandoffMarkdown
         });
         executionPayload = finalExecutionPayload;
         filesToSave.push(finalExecutionPayload.saved_to);
